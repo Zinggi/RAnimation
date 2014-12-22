@@ -1,0 +1,35 @@
+{
+  "name": "r-animation",
+  "version": "0.0.1",
+  "author": "Florian Zinggeler",
+  "description": "Animations for your react components!",
+  "main": "./src/index.jsx",
+  "keywords": [
+    "react",
+    "react-component",
+    "react animation",
+    "animation",
+    "tween",
+    "ease"
+  ],
+  "bugs": "https://github.com/Zinggi/RAnimation/issues/",
+  "homepage": "https://github.com/Zinggi/RAnimation",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Zinggi/RAnimation"
+  },
+  "dependencies": {
+    "react": "^0.12.1"
+  },
+  "devDependencies": {
+    "grunt": "^0.4.5",
+    "grunt-cli": "^0.1.13",
+    "grunt-contrib-watch": "^0.6.1",
+    "grunt-react": "^0.10.0",
+    "grunt-webpack": "^1.0.8",
+    "jsx-loader": "^0.12.2",
+    "webpack": "^1.4.13",
+    "webpack-dev-server": "^1.6.6"
+  },
+  "license": "MIT"
+}
