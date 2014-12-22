@@ -121,6 +121,4 @@ var animationMixin = {
     }
 };
 
-module.exports = {
-    animationMixin: animationMixin
-};
+module.exports = animationMixin;
