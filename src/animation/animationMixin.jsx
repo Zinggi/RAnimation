@@ -23,22 +23,26 @@ var animationMixin = {
      * Useful when doing animations based on mouseMove or similar.
      * 
      * This will cancel all ongoing animations. (set trough animateToState(..))
-     * 
-     * @id: the animationId to animate. Omit to animate itself (e.g. this)
      */
     setAnimationState(newState, id) {
         var target = animationIds[id + this._rootNodeID] || this;
-        this.stopAnimation();
         for (var p in newState) {
+            target.cancelAnimation(p);
             target.animationState[p] = newState[p];
         }
         target.performAnimation();
     },
-
+    cancelAnimation(id) {
+        var anim = this.__ongoingAnimations[id];
+        if (anim) {
+            if (anim.onEnded) {
+                anim.onEnded();
+            }
+            delete this.__ongoingAnimations[id];
+        }
+    },
     /*
      * Automatically animate from the current animationState to the new state
-     *
-     * Calls onAnimationEnded when finished or interrupted by setAnimationState.
      * 
      * @newState: an Object with fallowing properties:
      *  {
@@ -51,7 +55,9 @@ var animationMixin = {
      *          // Defaults to: Easing.cubicInOut
      *          easing(t) {
      *              return Math.pow(t,3);
-     *          }
+     *          },
+     *          onEnded: callback, // a callback that gets called when the animation finished or when interrupted
+     *          startValue: 3 // Optionally overwrite the start value. OMIT to use the current animationState value.
      *      },
      *      prop2: {
      *          // You can also use a complex object,
@@ -66,21 +72,20 @@ var animationMixin = {
      *          }
      *      }
      *  }
-     *  
-     * @id: the animationId to animate. Omit to animate itself (e.g. this)
      */
     animateToState(newState, id) {
         var target = animationIds[id + this._rootNodeID] || this;
         target.__ongoingAnimations = target.__ongoingAnimations || {};
-        target.stopAnimation();
-
         for (var p in newState) {
+            var newS = newState[p];
+            target.cancelAnimation(p);
             target.__ongoingAnimations[p] = {
-                startValue: target.animationState[p],
-                duration: newState[p].duration || 1000,
-                easing: newState[p].easing || Easing.cubicInOut,
-                endValue: newState[p].endValue,
+                startValue: newS.startValue || target.animationState[p],
+                duration: newS.duration || 1000,
+                easing: newS.easing || Easing.cubicInOut,
+                endValue: newS.endValue,
                 startTime: window.performance.now(),
+                onEnded: newS.onEnded
             };
         }
         if (!target.__animation) {
@@ -88,6 +93,7 @@ var animationMixin = {
         }
     },
     doAnimations() {
+        var finished = false;
         for (var p in this.__ongoingAnimations) {
             var anim = this.__ongoingAnimations[p];
             var percentage = (window.performance.now() - anim.startTime) / anim.duration;
@@ -95,28 +101,25 @@ var animationMixin = {
                 percentage = 1;
             }
             var newValue;
-            if (anim.easing.length === 1) {
+            if (anim.easing.length === 1) { // Meaning we've got a function of type Number [0-1] -> Number
                 newValue = EasingHelpers.ease(anim.easing, anim.startValue, anim.endValue)(percentage);
-            } else {
+            } else { // Meaning we've got a function of type (a, a, Number [0-1]) -> a
                 newValue = anim.easing(anim.startValue, anim.endValue, percentage);
             }
 
             this.animationState[p] = newValue;
             this.performAnimation();
             if (percentage === 1) {
-                this.stopAnimation();
-            } else {
-                this.__animation = window.requestAnimationFrame(this.doAnimations);
+                this.cancelAnimation(p);
+                if (Object.keys(this.__ongoingAnimations).length === 0) {
+                    finished = true;
+                }
             }
         }
-    },
-    stopAnimation() {
-        if (this.__animation) {
-            window.cancelAnimationFrame(this.__animation);
+        if (!finished) {
+            this.__animation = window.requestAnimationFrame(this.doAnimations);
+        } else {
             this.__animation = undefined;
-            if (this.onAnimationEnded) {
-                this.onAnimationEnded();
-            }
         }
     }
 };

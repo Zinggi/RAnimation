@@ -8,7 +8,8 @@ var Demo = React.createClass({
     getInitialState() {
         return {
             duration: 1000,
-            easing: Easing.linear
+            easing: Easing.linear,
+            forwards: true
         };
     },
     getInitialAnimationState() {
@@ -16,34 +17,41 @@ var Demo = React.createClass({
             x: 0
         };
     },
+    changeDuration(e) {
+        this.setState({
+            duration: e.target.value
+        });
+    },
     render() {
-        var options = Object.keys(Easing).filter(key => !/make/.test(key)).map(key => <option>{key}</option>);
+        var options = Object.keys(Easing).filter(key => !/make/.test(key)).map(key => <option key={key}>{key}</option>);
         return <div style={{height:"100%"}}>
             <select onChange={this.changeEasing}>
                 {options}
             </select>
+            duration: <input type="number" step="200" value={this.state.duration} onChange={this.changeDuration} />
             <button onClick={this.startAnimation}>Animate!</button>
-            <div ref="square" style={{backgroundColor:"red", width: "0px", height: "20px", marginLeft: "10%", border: "1px solid black"}}></div>
+            <div ref="ball" style={{backgroundColor:"red", width: "20px", height: "20px", borderRadius: "10px", position: "absolute"}}></div>
         </div>;
     },
     changeEasing(e) {
         this.setState({easing: Easing[e.target.value]});
     },
     startAnimation() {
-        this.setAnimationState({
-            x: 0
-        });
         this.animateToState({
             x: {
-                endValue: 1,
+                endValue: (this.state.forwards) ? 1 : 0,
                 duration: this.state.duration,
-                easing: this.state.easing
+                easing: this.state.easing,
+                stackingBehaviour: "replace"
             }
+        });
+        this.setState({
+            forwards: !this.state.forwards
         });
     },
     performAnimation() {
-        var node = this.refs.square.getDOMNode();
-        node.style.width = (this.animationState.x*80)+"%";
+        var node = this.refs.ball.getDOMNode();
+        node.style.left = (this.animationState.x*70 + 15)+"%";
     }
 });
 

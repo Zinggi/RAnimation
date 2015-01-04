@@ -110,8 +110,8 @@ var Easing = {
         return x => (Math.exp(s*x)-1.0)/(Math.exp(s)-1.0)*(Math.sin((Math.PI * 2.0 * n + Math.PI * 0.5) * x));
     },
     elasticIn(t) {
-        return Easing.makeElasticIn(7, 3)(t);
-        // return Math.sin(13.0 * t * Math.PI/2) * Math.pow(2.0, 10.0 * (t - 1.0));
+        // return Easing.makeElasticIn(7, 3)(t);
+        return Math.sin(13.0 * t * Math.PI/2) * Math.pow(2.0, 10.0 * (t - 1.0));
     },
     elasticOut(t) { return EasingHelpers.toEaseOut(Easing.elasticIn)(t); },
     /* DON'T use, ugly! */
@@ -160,13 +160,15 @@ var Easing = {
     },
     /* a bouncy function */
     bounceIn(t) {
-        return Easing.makeBounceIn(2, 3)(t);
-        // return t < 1 / 2.75 ? 7.5625 * t * t
-        //     : t < 2 / 2.75 ? 7.5625 * (t -= 1.5 / 2.75) * t + 0.75
-        //     : t < 2.5 / 2.75 ? 7.5625 * (t -= 2.25 / 2.75) * t + 0.9375
-        //     : 7.5625 * (t -= 2.625 / 2.75) * t + 0.984375;
+        // return Easing.makeBounceIn(2, 3)(t);
+        return EasingHelpers.toEaseOut(Easing.bounceOut)(t);
     },
-    bounceOut(t) { return EasingHelpers.toEaseOut(Easing.bounceIn)(t); },
+    bounceOut(t) { 
+        return t < 1 / 2.75 ? 7.5625 * t * t
+            : t < 2 / 2.75 ? 7.5625 * (t -= 1.5 / 2.75) * t + 0.75
+            : t < 2.5 / 2.75 ? 7.5625 * (t -= 2.25 / 2.75) * t + 0.9375
+            : 7.5625 * (t -= 2.625 / 2.75) * t + 0.984375;
+    },
     /* DON'T use, ugly! */
     bounceInOut(t) { return EasingHelpers.toEaseInOut(Easing.bounceIn)(t); },
 };
