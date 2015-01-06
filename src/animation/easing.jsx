@@ -29,7 +29,8 @@ var EasingHelpers = {
      * @return: a function f' that satisfies f'(0) = 0 and f'(1) = 1
      */
     squeeze(f, x1, x2) {
-        return t => (f(x1 + t*(x2-x1)) - f(x1)) / (f(x2) - f(x1));
+        var y1 = f(x1);
+        return t => (f(x1 + t*(x2-x1)) - y1) / (f(x2) - y1);
     }
 };
 

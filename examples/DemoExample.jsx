@@ -8,8 +8,11 @@ var Demo = React.createClass({
     getInitialState() {
         return {
             duration: 1000,
-            easing: Easing.linear,
-            forwards: true
+            easing: "linear",
+            forwards: true,
+            fadeDuration: 1,
+            fadeEasing: "cubicOut",
+            useFade: true
         };
     },
     getInitialAnimationState() {
@@ -17,32 +20,43 @@ var Demo = React.createClass({
             x: 0
         };
     },
-    changeDuration(e) {
-        this.setState({
-            duration: e.target.value
-        });
-    },
     render() {
         var options = Object.keys(Easing).filter(key => !/make/.test(key)).map(key => <option key={key}>{key}</option>);
         return <div style={{height:"100%"}}>
-            <select onChange={this.changeEasing}>
+            <select onChange={(e) => {this.setState({easing: e.target.value});}}>
                 {options}
             </select>
-            duration: <input type="number" step="200" value={this.state.duration} onChange={this.changeDuration} />
-            <button onClick={this.startAnimation}>Animate!</button>
-            <div ref="ball" style={{backgroundColor:"red", width: "20px", height: "20px", borderRadius: "10px", position: "absolute"}}></div>
+            duration: <input type="number" step="200" value={this.state.duration}
+                             onChange={(e) => {this.setState({duration: e.target.value});}} />
+            <br />
+            fade? <input type="checkbox" checked={this.state.useFade}
+                         onChange={(e) => {this.setState({useFade: e.target.checked});}} />
+            <select selected={this.state.fadeEasing}
+                    onChange={(e) => {this.setState({fadeEasing: e.target.value});}}>
+                {options}
+            </select>
+            duration: <input type="number" step="0.02" value={this.state.fadeDuration}
+                             onChange={(e) => {this.setState({fadeDuration: e.target.value});}} />
+            <br />
+            <button onClick={this.startAnimation}>
+                Animate!
+            </button>
+
+            <div ref="ball"
+                 style={{backgroundColor:"red", width: "20px", height: "20px", borderRadius: "10px", position: "absolute"}} />
         </div>;
     },
-    changeEasing(e) {
-        this.setState({easing: Easing[e.target.value]});
-    },
     startAnimation() {
+        var end = (this.state.forwards) ? 1 : 0;
         this.animateToState({
             x: {
-                endValue: (this.state.forwards) ? 1 : 0,
-                duration: this.state.duration,
-                easing: this.state.easing,
-                stackingBehaviour: "replace"
+                endValue: end,
+                duration: this.state.duration * Math.abs(this.animationState.x - end),
+                easing: Easing[this.state.easing],
+                fade: this.state.useFade ? {
+                    duration: this.state.fadeDuration,
+                    easing: Easing[this.state.fadeEasing]
+                } : undefined
             }
         });
         this.setState({
