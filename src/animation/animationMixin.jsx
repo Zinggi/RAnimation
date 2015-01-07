@@ -46,7 +46,7 @@ var animationMixin = {
     },
 
     cancelAnimation(id) {
-        var anim = this.__ongoingAnimations[id];
+        var anim = this.__ongoingAnimations && this.__ongoingAnimations[id];
         if (anim) {
             if (anim.onEnded) {
                 anim.onEnded();
