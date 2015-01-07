@@ -1,18 +1,21 @@
 "use strict";
 
 var React = require('react/addons'),
-    {animationMixin, Easing, EasingHelpers} = require('../src/index.jsx');
+    {animationMixin, Easing, EasingHelpers, Physical} = require('../src/index.jsx');
 
 var Demo = React.createClass({
     mixins: [animationMixin],
     getInitialState() {
         return {
-            duration: 1000,
-            easing: "linear",
+            animationType: "physical",
+            duration: 2000,
+            easing: "quadInOut",
             forwards: true,
-            fadeDuration: 1,
-            fadeEasing: "cubicOut",
-            useFade: true
+            fadeDuration: 0.5,
+            fadeEasing: "quadOut",
+            useFade: true,
+            frequency: 10,
+            damping: 0.3
         };
     },
     getInitialAnimationState() {
@@ -22,38 +25,59 @@ var Demo = React.createClass({
     },
     render() {
         var options = Object.keys(Easing).filter(key => !/make/.test(key)).map(key => <option key={key}>{key}</option>);
+
+        var config = (this.state.animationType === "static") ? <div>
+                <select value={this.state.easing}
+                        onChange={(e) => {this.setState({easing: e.target.value});}}>
+                    {options}
+                </select>
+                duration: <input type="number" step="200" value={this.state.duration}
+                                 onChange={(e) => {this.setState({duration: parseFloat(e.target.value)});}} />
+                <br />
+                fade? <input type="checkbox" checked={this.state.useFade}
+                             onChange={(e) => {this.setState({useFade: e.target.checked});}} />
+                <select value={this.state.fadeEasing}
+                        onChange={(e) => {this.setState({fadeEasing: e.target.value});}}>
+                    {options}
+                </select>
+                duration: <input type="number" step="0.02" value={this.state.fadeDuration}
+                                 onChange={(e) => {this.setState({fadeDuration: parseFloat(e.target.value)});}} />
+            </div> :
+            <div>
+                frequency: <input type="number" step="0.5" value={this.state.frequency}
+                                 onChange={(e) => {this.setState({frequency: parseFloat(e.target.value)});}} />
+                damping: <input type="number" step="0.1" value={this.state.damping}
+                                 onChange={(e) => {this.setState({damping: parseFloat(e.target.value)});}} />
+                {this.state.damping < 1 ? "under damped" : this.state.damping === 1 ? "critical damped" : "over damped"}
+            </div>;
+
         return <div style={{height:"100%"}}>
-            <select onChange={(e) => {this.setState({easing: e.target.value});}}>
-                {options}
+            <select value={this.state.animationType}
+                    onChange={(e) => {this.setState({animationType: e.target.value});}}>
+                <option>static</option>
+                <option>physical</option>
             </select>
-            duration: <input type="number" step="200" value={this.state.duration}
-                             onChange={(e) => {this.setState({duration: e.target.value});}} />
             <br />
-            fade? <input type="checkbox" checked={this.state.useFade}
-                         onChange={(e) => {this.setState({useFade: e.target.checked});}} />
-            <select selected={this.state.fadeEasing}
-                    onChange={(e) => {this.setState({fadeEasing: e.target.value});}}>
-                {options}
-            </select>
-            duration: <input type="number" step="0.02" value={this.state.fadeDuration}
-                             onChange={(e) => {this.setState({fadeDuration: e.target.value});}} />
+            {config}
             <br />
             <button onClick={this.startAnimation}>
                 Animate!
             </button>
 
             <div ref="ball"
-                 style={{backgroundColor:"red", width: "20px", height: "20px", borderRadius: "10px", position: "absolute"}} />
+                 style={{backgroundColor:"red", width: "50px", height: "50px", borderRadius: "10px", position: "absolute"}} />
         </div>;
     },
     startAnimation() {
         var end = (this.state.forwards) ? 1 : 0;
+        var isAtEnd = Math.abs(this.animationState.x - end) === 1;
+        var isStatic = this.state.animationType === "static";
         this.animateToState({
             x: {
                 endValue: end,
                 duration: this.state.duration * Math.abs(this.animationState.x - end),
-                easing: Easing[this.state.easing],
-                fade: this.state.useFade ? {
+                easing: isStatic ? Easing[this.state.easing] : Physical.makeDampedHarmonicOscillator(this.state.frequency, this.state.damping),
+                fade: (this.state.useFade && !isAtEnd) ? {
                     duration: this.state.fadeDuration,
                     easing: Easing[this.state.fadeEasing]
                 } : undefined

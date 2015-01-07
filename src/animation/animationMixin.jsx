@@ -1,6 +1,7 @@
 "use strict";
 
 var {Easing, EasingHelpers} = require("./easing");
+// var Physical = require("./physical");
 
 // for compatibility
 window.requestAnimationFrame = (function(){
@@ -43,6 +44,7 @@ var animationMixin = {
         }
         target.performAnimation();
     },
+
     cancelAnimation(id) {
         var anim = this.__ongoingAnimations[id];
         if (anim) {
@@ -54,18 +56,39 @@ var animationMixin = {
         }
         return undefined;
     },
+
     /*
      * Automatically animate from the current animationState to the new state
      * 
      * @newState: an Object with fallowing properties:
      *  {
      *      prop1: {
-     *          endValue: 42, // The end value of the property. REQUIRED
-     *          duration: 1500, // the duration of the animation in milliseconds.
-     *                          // DEFAULT: 1000
-     *          // An easing function f with type: Num [0-1] -> Num
+     *          // The end value of the property. REQUIRED
+     *          endValue: 42,
+     *          // the duration of the animation in milliseconds.
+     *          // DEFAULT: 1000
+     *          duration: 1500,
+     *          // An easing function f with type: f(t: Num [0-1]) -> Num
      *          //      where f(0) = 0 and f(1) = 1. f(0 < t < 1) is allowed to be out of the [0-1] range!
      *          // There are many useful functions available in Easing.* to pick from.
+     *          //
+     *          // -OR-
+     *          //
+     *          // A physical based function f of type: f(startPosition: Num, startVelocity: Num) -> (t: Num -> Num)
+     *          //      where f(x0, v0)(0) = startPosition, f(x0, v0)(infinity) = 0, df(x0, v0)/dt(0) = startVelocity
+     *          // If you choose a physical based function, the duration property will be ignored.
+     *          // The animation stops when t: |f(x0, v0)(t)| < epsilon and |df(x0, v0)/dt(t)| < epsilon,
+     *          //      for a very small epsilon.
+     *          // Useful functions can be found in Physical.*
+     *          //
+     *          // -OR-
+     *          //
+     *          // A custom function f of type: f(startValue: a, endValue: a, t: Num [0-1]) -> a
+     *          //      where f(x0, x1, 0) = x0, f(x0, x1, 1) = x1
+     *          // This allows you to interpolate whatever property you want,
+     *          // as long as you can provide an appropriate function.
+     *          // Colors, strings, potatoes, you name it!
+     *          //
      *          // DEFAULT: Easing.cubicInOut
      *          easing(t) {
      *              return Math.pow(t, 3);
@@ -113,44 +136,81 @@ var animationMixin = {
         for (var p in newState) {
             var newS = newState[p];
             var startValue = newS.startValue || target.animationState[p];
+            var endValue = newS.endValue;
             var newAnimDuration = newS.duration || 1000;
 
             var canceledAnim = target.cancelAnimation(p);
-
-            var tempEasing = newS.easing || Easing.cubicInOut;
-            if (tempEasing.length === 1) { // Meaning we've got a function of type Number [0-1] -> Number
-                tempEasing = EasingHelpers.ease(tempEasing, startValue, newS.endValue);
-            } else { // Meaning we've got a function of type (a, a, Number [0-1]) -> a
-                tempEasing = (t) => tempEasing(startValue, newS.endValue, t);
-            }
 
             var fade = newS.fade;
             var velocity = fade && fade.startingVelocity;
             velocity = velocity || (canceledAnim && canceledAnim.velocity) || 0;
 
+            var easingInput = newS.easing || Easing.cubicInOut;
+            var tempEasing;
+            if (easingInput.length === 1) { // Meaning we've got a function of type Num [0-1] -> Num
+                tempEasing = EasingHelpers.ease(easingInput, startValue, endValue);
+            } else if (easingInput.length === 2) { // Meaning we've got a physical function.
+                var physicalFn = easingInput(startValue - endValue, velocity * 1000);
+                tempEasing = (t) => physicalFn(t) + endValue;
+            } else { // Meaning we've got a function of type (a, a, Number [0-1]) -> a
+                tempEasing = easingInput;
+            }
+
             var newEasingFn = tempEasing;
-            if (fade) {
+            if (easingInput.length === 1 && fade) {
                 var duration = fade.duration || 0.5;
                 var easing = fade.easing || Easing.quadOut;
                 newEasingFn = (t) => {
                     if (t < duration) {
                         var eased = easing(t/duration);
-                        return (1-eased) * (velocity * t * newAnimDuration + startValue) + eased * tempEasing(t);
+                        return (1 - eased) * (velocity * t * newAnimDuration + startValue) + eased * tempEasing(t);
                     } else {
                         return tempEasing(t);
                     }
                 };
             }
 
-            var now = window.performance.now();
-            target.__ongoingAnimations[p] = {
-                duration: newAnimDuration,
-                easing: newEasingFn,
-                startTime: now,
-                onEnded: newS.onEnded,
-                velocity: velocity,
-                lastTime: now
+            var startTime = window.performance.now();
+
+            var anim = {
+                value: startValue,
+                finished: false
             };
+            if (easingInput.length !== 2) {
+                anim.velocity = velocity;
+                anim.lastTime = startTime;
+                anim.advance = (oldAnim, now) => {
+                    var percentage = (now - startTime) / newAnimDuration;
+                    if (percentage >= 1) {
+                        percentage = 1;
+                    }
+                    var newValue = newEasingFn(percentage);
+                    oldAnim.velocity = (newValue - oldAnim.value) / (now - oldAnim.lastTime);
+                    oldAnim.lastTime = now;
+                    oldAnim.value = newValue;
+                    if (percentage === 1) {
+                        oldAnim.finished = true;
+                    }
+                    return oldAnim;
+                };
+            } else {
+                anim.velocity = velocity;
+                anim.lastTime = startTime;
+                anim.advance = (oldAnim, now) => {
+                    var dt = now - startTime;
+                    var newValue = newEasingFn(dt/1000);
+                    oldAnim.velocity = (newValue - oldAnim.value) / (now - oldAnim.lastTime);
+                    oldAnim.lastTime = now;
+                    oldAnim.value = newValue;
+                    if (Math.abs(oldAnim.velocity) <= 0.0001 && Math.abs(oldAnim.value - endValue) <= 0.0001) {
+                        oldAnim.value = endValue;
+                        oldAnim.finished = true;
+                        console.log("finished animation!");
+                    }
+                    return oldAnim;
+                };
+            }
+            target.__ongoingAnimations[p] = anim;
         }
         if (!target.__animation) {
             target.__animation = window.requestAnimationFrame(target.doAnimations);
@@ -161,16 +221,10 @@ var animationMixin = {
         var now = window.performance.now();
         for (var p in this.__ongoingAnimations) {
             var anim = this.__ongoingAnimations[p];
-            var percentage = (now - anim.startTime) / anim.duration;
-            if (percentage >= 1) {
-                percentage = 1;
-            }
-            var newValue = anim.easing(percentage);
-
-            anim.velocity = (newValue - this.animationState[p]) / (now - anim.lastTime);
-            anim.lastTime = now;
-            this.animationState[p] = newValue;
-            if (percentage === 1) {
+            var newAnim = anim.advance(anim, now);
+            this.__ongoingAnimations[p] = newAnim;
+            this.animationState[p] = newAnim.value;
+            if (newAnim.finished) {
                 this.cancelAnimation(p);
                 if (Object.keys(this.__ongoingAnimations).length === 0) {
                     finished = true;
