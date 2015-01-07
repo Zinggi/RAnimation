@@ -174,7 +174,8 @@ var animationMixin = {
 
             var anim = {
                 value: startValue,
-                finished: false
+                finished: false,
+                onEnded: newS.onEnded
             };
             if (easingInput.length !== 2) {
                 anim.velocity = velocity;
@@ -205,7 +206,6 @@ var animationMixin = {
                     if (Math.abs(oldAnim.velocity) <= 0.0001 && Math.abs(oldAnim.value - endValue) <= 0.0001) {
                         oldAnim.value = endValue;
                         oldAnim.finished = true;
-                        console.log("finished animation!");
                     }
                     return oldAnim;
                 };
