@@ -1,24 +1,18 @@
 "use strict";
 
+
+require('./polyfills');
 var {Easing, EasingHelpers} = require("./easing");
 // var Physical = require("./physical");
 
-// for compatibility
-window.requestAnimationFrame = (function(){
-  return  window.requestAnimationFrame       ||
-      window.webkitRequestAnimationFrame ||
-      window.mozRequestAnimationFrame    ||
-      function( callback ){
-        window.setTimeout(callback, 1000 / 60);
-      };
-})();
 
-
-// here we store all references to objects containing animations
+// Here we store all animationIds to keep a references to objects containing animations.
 var animationIds = {};
 
 var animationMixin = {
     componentDidMount() {
+        // TODO: configure the state model
+        // 
         // set the initial state
         this.animationState = this.getInitialAnimationState();
         // If this component has an ID, store a reference to it
@@ -30,6 +24,9 @@ var animationMixin = {
     },
 
     /*
+     * TODO: 
+     *     Replace with directUserInput
+     * 
      * Set the state of the animation directly.
      * Calling this will call performAnimation()
      * Useful when doing animations based on mouseMove or similar.
