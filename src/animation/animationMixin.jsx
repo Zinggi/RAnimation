@@ -1,26 +1,150 @@
 "use strict";
 
-
 require('./polyfills');
 var {Easing, EasingHelpers} = require("./easing");
-// var Physical = require("./physical");
+var Physical = require("./physical");
 
+
+var ongoingAnimations = {};
+var animationFrame;
+var numAnimations = 0;
+
+var doAnimations = () => {
+    var now = window.performance.now();
+
+    for (var p in ongoingAnimations) {
+        var animCont = ongoingAnimations[p];
+        var ref = animCont.ref;
+        var anims = animCont.anims;
+        for (var prop in anims) {
+            var anim = anims[prop];
+            var newAnim = anim.advance(anim, now);
+            anims[prop] = newAnim;
+            ref.animationState[prop] = newAnim.value;
+            if (newAnim.finished) {
+                ref.cancelAnimation(prop, true);
+            }
+        }
+        // (TODO): maybe pass the previous values and/or the delta time?
+        ref.performAnimation();
+    }
+    if (numAnimations !== 0) {
+        animationFrame = window.requestAnimationFrame(doAnimations);
+    } else {
+        animationFrame = undefined;
+    }
+};
+
+var startAnimation = (anim, prop, ref) => {
+    numAnimations++;
+    var rootID = ref._rootNodeID;
+    var animCont = ongoingAnimations[rootID] = ongoingAnimations[rootID] || {
+        ref: ref,
+        anims: {},
+    };
+    animCont.anims[prop] = anim;
+
+    if (!animationFrame) {
+        animationFrame = window.requestAnimationFrame(doAnimations);
+    }
+};
+
+var cancelAnimation = (prop, rootID, couldFinish) => {
+    var animCont = ongoingAnimations[rootID];
+    if (animCont) {
+        var anim = animCont.anims[prop];
+        if (anim) {
+            if (anim.onEnd) {
+                anim.onEnd(couldFinish);
+            }
+            numAnimations--;
+            delete animCont.anims[prop];
+            if (Object.keys(animCont.anims).length === 0) {
+                delete ongoingAnimations[rootID];
+            }
+            return anim;
+        }
+    }
+    return undefined;
+};
 
 // Here we store all animationIds to keep a references to objects containing animations.
 var animationIds = {};
 
 var animationMixin = {
     componentDidMount() {
-        // TODO: configure the state model
-        // 
         // set the initial state
         this.animationState = this.getInitialAnimationState();
+
         // If this component has an ID, store a reference to it
         if (this.props.animationId) {
             animationIds[this.props.animationId + this._owner._rootNodeID] = this;
         }
         // perform first animation
+        // (TODO): maybe pass the previous values and/or the delta time?
         this.performAnimation();
+    },
+
+    /*
+     * Cancels an ongoing animation for the animationState property p.
+     * Returns the canceled animation object.
+     * This contains a velocity property, among some other implementation details:
+     */
+    cancelAnimation(p, couldFinish) {
+        couldFinish = !!couldFinish;
+        return cancelAnimation(p, this._rootNodeID, couldFinish);
+    },
+
+    /*
+     * Simulates the transition from the current state to the given newState,
+     * respecting the inertia.
+     * 
+     *  + Physically accurate, natural movement
+     *  - You don't know when it stops exactly, less control.
+     *
+     * @newState: an object like this:
+     *     {
+     *         x: {
+     *             endValue: 42, // Where to simulate to.
+     *                           // REQUIRED
+     *             simulationFn: Physical.underDamped, // A function f of type:
+     *                 // f(startValue: Num, endValue: Num, startVelocity: Num) -> (t: Num n -> Num)
+     *                 //   where n > 0, f(x0, x1, v0)(0) = x0, f(x0, x1, v0)(infinity) = x1, df(x0, x1, v0)/dt(0) = v0
+     *                 // The simulation ends at t:
+     *                 //   |f(x0, x1, v0)(t)| < eps and |df(x0, x1, v0)/dt(t)| < eps, for a very small eps.
+     *                 // Useful functions can be found in Physical.*
+     *                 // DEFAULT: Physical.criticalDamped
+     *             onEnd: callback // A callback that gets called with true, when the simulation finished
+     *                             // or with false, when interrupted.
+     *         }, ...
+     *     }
+     */
+    simulateTo(newState, id) {
+        var target = animationIds[id + this._rootNodeID] || this;
+        var startTime = window.performance.now();
+
+        for (var p in newState) {
+            var config = newState[p];
+
+            var startValue = target.animationState[p];
+            var endValue = config.endValue;
+            var canceledAnim = target.cancelAnimation(p);
+            var velocity = canceledAnim && canceledAnim.velocity || 0;
+            var simulationFn = config.simulationFn || Physical.criticalDamped;
+
+            // TODO: make sure all implementations expect velocity to be value/s
+            var finalSimFn = simulationFn(startValue, endValue, velocity);
+
+            var anim = {
+                value: startValue,
+                lastTime: startTime,
+                velocity: velocity,
+                finished: false,
+                onEnd: config.onEnd,
+                advance: Physical.advanceAnimation(startTime, endValue, finalSimFn)
+            };
+            startAnimation(anim, p, target);
+        }
     },
 
     /*
@@ -33,26 +157,26 @@ var animationMixin = {
      * 
      * This will cancel all ongoing animations. (set trough animateToState(..))
      */
-    setAnimationState(newState, id) {
-        var target = animationIds[id + this._rootNodeID] || this;
-        for (var p in newState) {
-            target.cancelAnimation(p);
-            target.animationState[p] = newState[p];
-        }
-        target.performAnimation();
-    },
+    // setAnimationState(newState, id) {
+    //     var target = animationIds[id + this._rootNodeID] || this;
+    //     for (var p in newState) {
+    //         target.cancelAnimation(p);
+    //         target.animationState[p] = newState[p];
+    //     }
+    //     target.performAnimation();
+    // },
 
-    cancelAnimation(id) {
-        var anim = this.__ongoingAnimations && this.__ongoingAnimations[id];
-        if (anim) {
-            if (anim.onEnded) {
-                anim.onEnded();
-            }
-            delete this.__ongoingAnimations[id];
-            return anim;
-        }
-        return undefined;
-    },
+    // cancelAnimation(id) {
+    //     var anim = this.__ongoingAnimations && this.__ongoingAnimations[id];
+    //     if (anim) {
+    //         if (anim.onEnded) {
+    //             anim.onEnded();
+    //         }
+    //         delete this.__ongoingAnimations[id];
+    //         return anim;
+    //     }
+    //     return undefined;
+    // },
 
     /*
      * Automatically animate from the current animationState to the new state
@@ -127,114 +251,114 @@ var animationMixin = {
      *      }
      *  }
      */
-    animateToState(newState, id) {
-        var target = animationIds[id + this._rootNodeID] || this;
-        target.__ongoingAnimations = target.__ongoingAnimations || {};
-        for (var p in newState) {
-            var newS = newState[p];
-            var startValue = newS.startValue || target.animationState[p];
-            var endValue = newS.endValue;
-            var newAnimDuration = newS.duration || 1000;
+    // animateToState(newState, id) {
+    //     var target = animationIds[id + this._rootNodeID] || this;
+    //     target.__ongoingAnimations = target.__ongoingAnimations || {};
+    //     for (var p in newState) {
+    //         var newS = newState[p];
+    //         var startValue = newS.startValue || target.animationState[p];
+    //         var endValue = newS.endValue;
+    //         var newAnimDuration = newS.duration || 1000;
 
-            var canceledAnim = target.cancelAnimation(p);
+    //         var canceledAnim = target.cancelAnimation(p);
 
-            var fade = newS.fade;
-            var velocity = fade && fade.startingVelocity;
-            velocity = velocity || (canceledAnim && canceledAnim.velocity) || 0;
+    //         var fade = newS.fade;
+    //         var velocity = fade && fade.startingVelocity;
+    //         velocity = velocity || (canceledAnim && canceledAnim.velocity) || 0;
 
-            var easingInput = newS.easing || Easing.cubicInOut;
-            var tempEasing;
-            if (easingInput.length === 1) { // Meaning we've got a function of type Num [0-1] -> Num
-                tempEasing = EasingHelpers.ease(easingInput, startValue, endValue);
-            } else if (easingInput.length === 2) { // Meaning we've got a physical function.
-                var physicalFn = easingInput(startValue - endValue, velocity * 1000);
-                tempEasing = (t) => physicalFn(t) + endValue;
-            } else { // Meaning we've got a function of type (a, a, Number [0-1]) -> a
-                tempEasing = easingInput;
-            }
+    //         var easingInput = newS.easing || Easing.cubicInOut;
+    //         var tempEasing;
+    //         if (easingInput.length === 1) { // Meaning we've got a function of type Num [0-1] -> Num
+    //             tempEasing = EasingHelpers.ease(easingInput, startValue, endValue);
+    //         } else if (easingInput.length === 2) { // Meaning we've got a physical function.
+    //             var physicalFn = easingInput(startValue - endValue, velocity * 1000);
+    //             tempEasing = (t) => physicalFn(t) + endValue;
+    //         } else { // Meaning we've got a function of type (a, a, Number [0-1]) -> a
+    //             tempEasing = easingInput;
+    //         }
 
-            var newEasingFn = tempEasing;
-            if (easingInput.length === 1 && fade) {
-                var duration = fade.duration || 0.5;
-                var easing = fade.easing || Easing.quadOut;
-                newEasingFn = (t) => {
-                    if (t < duration) {
-                        var eased = easing(t/duration);
-                        return (1 - eased) * (velocity * t * newAnimDuration + startValue) + eased * tempEasing(t);
-                    } else {
-                        return tempEasing(t);
-                    }
-                };
-            }
+    //         var newEasingFn = tempEasing;
+    //         if (easingInput.length === 1 && fade) {
+    //             var duration = fade.duration || 0.5;
+    //             var easing = fade.easing || Easing.quadOut;
+    //             newEasingFn = (t) => {
+    //                 if (t < duration) {
+    //                     var eased = easing(t/duration);
+    //                     return (1 - eased) * (velocity * t * newAnimDuration + startValue) + eased * tempEasing(t);
+    //                 } else {
+    //                     return tempEasing(t);
+    //                 }
+    //             };
+    //         }
 
-            var startTime = window.performance.now();
+    //         var startTime = window.performance.now();
 
-            var anim = {
-                value: startValue,
-                finished: false,
-                onEnded: newS.onEnded
-            };
-            if (easingInput.length !== 2) {
-                anim.velocity = velocity;
-                anim.lastTime = startTime;
-                anim.advance = (oldAnim, now) => {
-                    var percentage = (now - startTime) / newAnimDuration;
-                    if (percentage >= 1) {
-                        percentage = 1;
-                    }
-                    var newValue = newEasingFn(percentage);
-                    oldAnim.velocity = (newValue - oldAnim.value) / (now - oldAnim.lastTime);
-                    oldAnim.lastTime = now;
-                    oldAnim.value = newValue;
-                    if (percentage === 1) {
-                        oldAnim.finished = true;
-                    }
-                    return oldAnim;
-                };
-            } else {
-                anim.velocity = velocity;
-                anim.lastTime = startTime;
-                anim.advance = (oldAnim, now) => {
-                    var dt = now - startTime;
-                    var newValue = newEasingFn(dt/1000);
-                    oldAnim.velocity = (newValue - oldAnim.value) / (now - oldAnim.lastTime);
-                    oldAnim.lastTime = now;
-                    oldAnim.value = newValue;
-                    if (Math.abs(oldAnim.velocity) <= 0.0001 && Math.abs(oldAnim.value - endValue) <= 0.0001) {
-                        oldAnim.value = endValue;
-                        oldAnim.finished = true;
-                    }
-                    return oldAnim;
-                };
-            }
-            target.__ongoingAnimations[p] = anim;
-        }
-        if (!target.__animation) {
-            target.__animation = window.requestAnimationFrame(target.doAnimations);
-        }
-    },
-    doAnimations() {
-        var finished = false;
-        var now = window.performance.now();
-        for (var p in this.__ongoingAnimations) {
-            var anim = this.__ongoingAnimations[p];
-            var newAnim = anim.advance(anim, now);
-            this.__ongoingAnimations[p] = newAnim;
-            this.animationState[p] = newAnim.value;
-            if (newAnim.finished) {
-                this.cancelAnimation(p);
-                if (Object.keys(this.__ongoingAnimations).length === 0) {
-                    finished = true;
-                }
-            }
-        }
-        this.performAnimation();
-        if (!finished) {
-            this.__animation = window.requestAnimationFrame(this.doAnimations);
-        } else {
-            this.__animation = undefined;
-        }
-    }
+    //         var anim = {
+    //             value: startValue,
+    //             finished: false,
+    //             onEnded: newS.onEnded
+    //         };
+    //         if (easingInput.length !== 2) {
+    //             anim.velocity = velocity;
+    //             anim.lastTime = startTime;
+    //             anim.advance = (oldAnim, now) => {
+    //                 var percentage = (now - startTime) / newAnimDuration;
+    //                 if (percentage >= 1) {
+    //                     percentage = 1;
+    //                 }
+    //                 var newValue = newEasingFn(percentage);
+    //                 oldAnim.velocity = (newValue - oldAnim.value) / (now - oldAnim.lastTime);
+    //                 oldAnim.lastTime = now;
+    //                 oldAnim.value = newValue;
+    //                 if (percentage === 1) {
+    //                     oldAnim.finished = true;
+    //                 }
+    //                 return oldAnim;
+    //             };
+    //         } else {
+    //             anim.velocity = velocity;
+    //             anim.lastTime = startTime;
+    //             anim.advance = (oldAnim, now) => {
+    //                 var dt = now - startTime;
+    //                 var newValue = newEasingFn(dt/1000);
+    //                 oldAnim.velocity = (newValue - oldAnim.value) / (now - oldAnim.lastTime);
+    //                 oldAnim.lastTime = now;
+    //                 oldAnim.value = newValue;
+    //                 if (Math.abs(oldAnim.velocity) <= 0.0001 && Math.abs(oldAnim.value - endValue) <= 0.0001) {
+    //                     oldAnim.value = endValue;
+    //                     oldAnim.finished = true;
+    //                 }
+    //                 return oldAnim;
+    //             };
+    //         }
+    //         target.__ongoingAnimations[p] = anim;
+    //     }
+    //     if (!target.__animation) {
+    //         target.__animation = window.requestAnimationFrame(target.doAnimations);
+    //     }
+    // },
+    // doAnimations() {
+    //     var finished = false;
+    //     var now = window.performance.now();
+    //     for (var p in this.__ongoingAnimations) {
+    //         var anim = this.__ongoingAnimations[p];
+    //         var newAnim = anim.advance(anim, now);
+    //         this.__ongoingAnimations[p] = newAnim;
+    //         this.animationState[p] = newAnim.value;
+    //         if (newAnim.finished) {
+    //             this.cancelAnimation(p);
+    //             if (Object.keys(this.__ongoingAnimations).length === 0) {
+    //                 finished = true;
+    //             }
+    //         }
+    //     }
+    //     this.performAnimation();
+    //     if (!finished) {
+    //         this.__animation = window.requestAnimationFrame(this.doAnimations);
+    //     } else {
+    //         this.__animation = undefined;
+    //     }
+    // }
 };
 
 module.exports = animationMixin;

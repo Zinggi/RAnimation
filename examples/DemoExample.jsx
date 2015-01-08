@@ -72,17 +72,28 @@ var Demo = React.createClass({
         var end = (this.state.forwards) ? 1 : 0;
         var isAtEnd = Math.abs(this.animationState.x - end) === 1;
         var isStatic = this.state.animationType === "static";
-        this.animateToState({
-            x: {
-                endValue: end,
-                duration: this.state.duration * Math.abs(this.animationState.x - end),
-                easing: isStatic ? Easing[this.state.easing] : Physical.makeDampedHarmonicOscillator(this.state.frequency, this.state.damping),
-                fade: (this.state.useFade && !isAtEnd) ? {
-                    duration: this.state.fadeDuration,
-                    easing: Easing[this.state.fadeEasing]
-                } : undefined
-            }
-        });
+        if (!isStatic) {
+            this.simulateTo({
+                x: {
+                    endValue: end,
+                    simulationFn: Physical.makeDampedHarmonicOscillator(this.state.frequency, this.state.damping),
+                    onEnd: (didComplete) => console.log(didComplete)
+                }
+            });
+        } else {
+            throw up;
+        }
+        // this.animateToState({
+        //     x: {
+        //         endValue: end,
+        //         duration: this.state.duration * Math.abs(this.animationState.x - end),
+        //         easing: isStatic ? Easing[this.state.easing] : Physical.makeDampedHarmonicOscillator(this.state.frequency, this.state.damping),
+        //         fade: (this.state.useFade && !isAtEnd) ? {
+        //             duration: this.state.fadeDuration,
+        //             easing: Easing[this.state.fadeEasing]
+        //         } : undefined
+        //     }
+        // });
         this.setState({
             forwards: !this.state.forwards
         });
