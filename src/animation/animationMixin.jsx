@@ -136,6 +136,9 @@ var animationMixin = {
      *     {
      *         x: {
      *             endValue: 42, // Where to simulate to.
+     *                           // Either a value
+     *                           // -OR- a function of type: (velocity: Num) -> Num
+     *                           //     This is useful if your end value depends on the previous velocity.
      *                           // REQUIRED
      *             simulationFn: Physical.underDamped, // A function f of type:
      *                 // f(startValue: Num, endValue: Num, startVelocity: Num) -> (t: Num n -> Num)
@@ -157,10 +160,17 @@ var animationMixin = {
             var config = newState[p];
 
             var startValue = target.animationState[p];
-            var endValue = config.endValue;
+            
             var canceledAnim = target.cancelAnimation(p);
             var velocity = canceledAnim && canceledAnim.velocity || 0;
             var simulationFn = config.simulationFn || Physical.criticalDamped;
+
+            var endValue;
+            if (typeof config.endValue === "function") {
+                endValue = config.endValue(velocity);
+            } else {
+                endValue = config.endValue;
+            }
 
             // TODO: make sure all implementations expect velocity to be value/s
             var finalSimFn = simulationFn(startValue, endValue, velocity);
