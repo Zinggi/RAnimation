@@ -70,7 +70,12 @@ var startDummyAnimation = (ref, prop, startValue, startTime) => {
 var modifyDummyAnimation = (ref, prop, newValue) => {
     var rootID = ref._rootNodeID;
     var animCont = ongoingAnimations[rootID];
-    animCont.anims[prop].newValue = newValue;
+    if (animCont) {
+        var anim = animCont.anims[prop];
+        if (anim) {
+            anim.newValue = newValue;
+        }
+    }
 };
 
 
