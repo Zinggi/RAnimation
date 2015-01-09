@@ -49,6 +49,31 @@ var startAnimation = (anim, prop, ref) => {
     }
 };
 
+var startDummyAnimation = (ref, prop, startValue, startTime) => {
+    startAnimation({
+        advance(oldAnim, now) {
+            var dt = now - startTime;
+            // We scale by 1000 here because our function takes s and not ms.
+            oldAnim.velocity = (oldAnim.newValue - oldAnim.value) / (now - oldAnim.lastTime) * 1000;
+            oldAnim.lastTime = now;
+            oldAnim.value = oldAnim.newValue;
+            return oldAnim;
+        },
+        newValue: startValue,
+        value: startValue,
+        velocity: 0,
+        finished: false,
+        lastTime: startTime
+    }, prop, ref);
+};
+
+var modifyDummyAnimation = (ref, prop, newValue) => {
+    var rootID = ref._rootNodeID;
+    var animCont = ongoingAnimations[rootID];
+    animCont.anims[prop].newValue = newValue;
+};
+
+
 var cancelAnimation = (prop, rootID, couldFinish) => {
     var animCont = ongoingAnimations[rootID];
     if (animCont) {
@@ -146,6 +171,50 @@ var animationMixin = {
             startAnimation(anim, p, target);
         }
     },
+
+    /*
+     * Use to set the animation state directly,
+     * while giving you the benefit of offloading the rendering to the animation frame
+     * and keeping track of the velocity for smooth transitions to a controlled animation.
+     * 
+     * Best used with user input to give them maximum control over an animation.
+     * Good candidates for using this are onMouseMove, onTouchMove, onScroll, etc...
+     *
+     * MAKE SURE YOU'VE USED startDirectUserInteraction BEFORE!
+     *
+     *  + Direct control to the user
+     *  - Unphysical movement
+     *
+     * @newState: an object like:
+     * {
+     *     x: e.clientX // The new value.
+     * }
+     * 
+     */
+    directUserInput(newState, id) {
+        var target = animationIds[id + this._rootNodeID] || this;
+        for (var p in newState) {
+            modifyDummyAnimation(target, p, newState[p]);
+        }
+    },
+    /*
+     * Call this just before starting a series of directUserInput(..)s.
+     * It prepares everything necessary to offload all fallowing directUserInput(..)s
+     * into the animation frame and to keep track of the velocity.
+     *
+     * Good candidates for using this are onMouseDown, onTouchDown, onScrollStart, etc...
+     *
+     * @newState: an object containing the starting state
+     */
+    startDirectUserInput(newState, id) {
+        var target = animationIds[id + this._rootNodeID] || this;
+        var startTime = window.performance.now();
+
+        for (var p in newState) {
+            target.cancelAnimation(p);
+            startDummyAnimation(target, p, newState[p], startTime); 
+        }
+    }
 
     /*
      * TODO: 

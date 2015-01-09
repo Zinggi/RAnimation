@@ -4,6 +4,7 @@ module.exports = {
   dev: {
     entry: {
       DemoExample: './examples/DemoExample.jsx',
+      UserInput: './examples/UserInput.jsx',
     },
     output: {
       path: path.join(__dirname,'../examples'),

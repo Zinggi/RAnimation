@@ -53,100 +53,62 @@
 	    mixins: [animationMixin],
 	    getInitialState:function() {
 	        return {
-	            animationType: "physical",
-	            duration: 2000,
-	            easing: "quadInOut",
-	            forwards: true,
-	            fadeDuration: 0.5,
-	            fadeEasing: "quadOut",
-	            useFade: true,
-	            frequency: 10,
-	            damping: 0.3
+	            mousedown: false
 	        };
+	    },
+	    componentDidMount:function() {
+	        this.setState({
+	            sizeX: this.getDOMNode().clientWidth,
+	            sizeY: this.getDOMNode().clientHeight,
+	        })
 	    },
 	    getInitialAnimationState:function() {
 	        return {
-	            x: 0
+	            x: 0.5,
+	            y: 0.5
 	        };
 	    },
 	    render:function() {
-	        var options = Object.keys(Easing).filter(function(key)  {return !/make/.test(key);}).map(function(key)  {return React.createElement("option", {key: key}, key);});
-
-	        var config = (this.state.animationType === "static") ? React.createElement("div", null, 
-	                React.createElement("select", {value: this.state.easing, 
-	                        onChange: function(e)  {this.setState({easing: e.target.value});}.bind(this)}, 
-	                    options
-	                ), 
-	                "duration: ", React.createElement("input", {type: "number", step: "200", value: this.state.duration, 
-	                                 onChange: function(e)  {this.setState({duration: parseFloat(e.target.value)});}.bind(this)}), 
-	                React.createElement("br", null), 
-	                "fade? ", React.createElement("input", {type: "checkbox", checked: this.state.useFade, 
-	                             onChange: function(e)  {this.setState({useFade: e.target.checked});}.bind(this)}), 
-	                React.createElement("select", {value: this.state.fadeEasing, 
-	                        onChange: function(e)  {this.setState({fadeEasing: e.target.value});}.bind(this)}, 
-	                    options
-	                ), 
-	                "duration: ", React.createElement("input", {type: "number", step: "0.02", value: this.state.fadeDuration, 
-	                                 onChange: function(e)  {this.setState({fadeDuration: parseFloat(e.target.value)});}.bind(this)})
-	            ) :
-	            React.createElement("div", null, 
-	                "frequency: ", React.createElement("input", {type: "number", step: "0.5", value: this.state.frequency, 
-	                                 onChange: function(e)  {this.setState({frequency: parseFloat(e.target.value)});}.bind(this)}), 
-	                "damping: ", React.createElement("input", {type: "number", step: "0.1", value: this.state.damping, 
-	                                 onChange: function(e)  {this.setState({damping: parseFloat(e.target.value)});}.bind(this)}), 
-	                this.state.damping < 1 ? "under damped" : this.state.damping === 1 ? "critical damped" : "over damped"
-	            );
-
-	        return React.createElement("div", {style: {height:"100%"}}, 
-	            React.createElement("select", {value: this.state.animationType, 
-	                    onChange: function(e)  {this.setState({animationType: e.target.value});}.bind(this)}, 
-	                React.createElement("option", null, "static"), 
-	                React.createElement("option", null, "physical")
-	            ), 
-	            React.createElement("br", null), 
-	            config, 
-	            React.createElement("br", null), 
-	            React.createElement("button", {onClick: this.startAnimation}, 
-	                "Animate!"
-	            ), 
-
+	        return React.createElement("div", {style: {height:"100%"}, onMouseMove: this.animateBall, 
+	                    onMouseDown: function(e)  {
+	                        this.setState({mousedown: true});
+	                        this.startDirectUserInput({x: e.clientX/this.state.sizeX, y: e.clientY/this.state.sizeY});
+	                    }.bind(this), 
+	                    onMouseUp: function()  {
+	                        this.setState({mousedown: false});
+	                        this.simulateBall(0.5, 0.5);
+	                    }.bind(this)}, 
 	            React.createElement("div", {ref: "ball", 
-	                 style: {backgroundColor:"red", width: "50px", height: "50px", borderRadius: "10px", position: "absolute"}})
+	                 style: {backgroundColor:"red", width: "50px", height: "50px", borderRadius: "10px",
+	                         position: "absolute", marginLeft: "-25px", marginTop: "-25px"}})
 	        );
 	    },
-	    startAnimation:function() {
-	        var end = (this.state.forwards) ? 1 : 0;
-	        var isAtEnd = Math.abs(this.animationState.x - end) === 1;
-	        var isStatic = this.state.animationType === "static";
-	        if (!isStatic) {
-	            this.simulateTo({
-	                x: {
-	                    endValue: end,
-	                    simulationFn: Physical.makeDampedHarmonicOscillator(this.state.frequency, this.state.damping),
-	                    onEnd: function(didComplete)  {return console.log(didComplete);}
-	                }
-	            });
-	        } else {
-	            throw up;
+	    animateBall:function(e) {
+	        if (!this.state.mousedown) {
+	            return;
 	        }
-	        // this.animateToState({
-	        //     x: {
-	        //         endValue: end,
-	        //         duration: this.state.duration * Math.abs(this.animationState.x - end),
-	        //         easing: isStatic ? Easing[this.state.easing] : Physical.makeDampedHarmonicOscillator(this.state.frequency, this.state.damping),
-	        //         fade: (this.state.useFade && !isAtEnd) ? {
-	        //             duration: this.state.fadeDuration,
-	        //             easing: Easing[this.state.fadeEasing]
-	        //         } : undefined
-	        //     }
-	        // });
-	        this.setState({
-	            forwards: !this.state.forwards
+	        // console.log("x: " + e.clientX/e.target.clientWidth + "  y: " + e.clientY/e.target.clientHeight);
+	        this.directUserInput({
+	            x: e.clientX/this.state.sizeX,
+	            y: e.clientY/this.state.sizeY
+	        });
+	    },
+	    simulateBall:function(x, y) {
+	        this.simulateTo({
+	            x: {
+	                endValue: x,
+	                simulationFn: Physical.underDamped
+	            },
+	            y: {
+	                endValue: y,
+	                simulationFn: Physical.underDamped
+	            }
 	        });
 	    },
 	    performAnimation:function() {
 	        var node = this.refs.ball.getDOMNode();
-	        node.style.left = (this.animationState.x*70 + 15)+"%";
+	        node.style.left = (this.animationState.x*100)+"%";
+	        node.style.top = (this.animationState.y*100)+"%";
 	    }
 	});
 
