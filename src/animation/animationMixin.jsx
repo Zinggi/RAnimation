@@ -11,7 +11,6 @@ var numAnimations = 0;
 
 var doAnimations = () => {
     var now = window.performance.now();
-
     for (var p in ongoingAnimations) {
         var animCont = ongoingAnimations[p];
         var ref = animCont.ref;
@@ -25,7 +24,6 @@ var doAnimations = () => {
                 ref.cancelAnimation(prop, true);
             }
         }
-        // (TODO): maybe pass the previous values and/or the delta time?
         ref.performAnimation();
     }
     if (numAnimations !== 0) {
@@ -96,6 +94,16 @@ var cancelAnimation = (prop, rootID, couldFinish) => {
         }
     }
     return undefined;
+};
+
+var cancelAnimations = (ref) => {
+    var rootNode = ref._rootNodeID;
+    var animCont = ongoingAnimations[rootNode];
+    if (animCont) {
+        for (var prop in animCont.anims) {
+            cancelAnimation(prop, rootNode);
+        }
+    }
 };
 
 // Here we store all animationIds to keep a references to objects containing animations.
@@ -229,6 +237,9 @@ var animationMixin = {
             target.cancelAnimation(p);
             startDummyAnimation(target, p, newState[p], startTime); 
         }
+    },
+    componentWillUnmount() {
+        cancelAnimations(this);
     }
 
     /*
