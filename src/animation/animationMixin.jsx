@@ -47,6 +47,15 @@ var startAnimation = (anim, prop, ref) => {
     }
 };
 
+var getAnimation = (ref, prop) => {
+    var rootID = ref._rootNodeID;
+    var animCont = ongoingAnimations[rootID];
+    if (animCont) {
+        return animCont.anims[prop];
+    }
+    return undefined;
+};
+
 var startDummyAnimation = (ref, prop, startValue, startTime) => {
     startAnimation({
         advance(oldAnim, now) {
@@ -124,6 +133,17 @@ var animationMixin = {
     cancelAnimation(p, couldFinish) {
         couldFinish = !!couldFinish;
         return cancelAnimation(p, this._rootNodeID, couldFinish);
+    },
+
+    /*
+     * Returns the current animation for prop or undefined
+     * if there is no animation for this property.
+     *
+     * The returned object contains the velocity
+     * plus some implementation details.
+     */
+    getAnimation(prop) {
+        return getAnimation(this, prop);
     },
 
     /*
