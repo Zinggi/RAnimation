@@ -81,19 +81,19 @@ var Demo = React.createClass({
                 }
             });
         } else {
-            throw up;
+            this.easeTo({
+                x: {
+                    endValue: end,
+                    duration: this.state.duration * Math.abs(this.animationState.x - end),
+                    easingFn: Easing[this.state.easing],
+                    onEnd: (didComplete) => console.log(didComplete),
+                    fade: (this.state.useFade && !isAtEnd) ? {
+                        duration: this.state.fadeDuration,
+                        interpolationFn: Easing[this.state.fadeEasing]
+                    } : undefined
+                }
+            });
         }
-        // this.animateToState({
-        //     x: {
-        //         endValue: end,
-        //         duration: this.state.duration * Math.abs(this.animationState.x - end),
-        //         easing: isStatic ? Easing[this.state.easing] : Physical.makeDampedHarmonicOscillator(this.state.frequency, this.state.damping),
-        //         fade: (this.state.useFade && !isAtEnd) ? {
-        //             duration: this.state.fadeDuration,
-        //             easing: Easing[this.state.fadeEasing]
-        //         } : undefined
-        //     }
-        // });
         this.setState({
             forwards: !this.state.forwards
         });

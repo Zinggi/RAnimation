@@ -77,12 +77,12 @@ var modifyDummyAnimation = (ref, prop, newValue) => {
 };
 
 
-var cancelAnimation = (prop, rootID, couldFinish) => {
+var cancelAnimation = (prop, rootID, couldFinish, dontFireOnEnd) => {
     var animCont = ongoingAnimations[rootID];
     if (animCont) {
         var anim = animCont.anims[prop];
         if (anim) {
-            if (anim.onEnd) {
+            if (!dontFireOnEnd && anim.onEnd) {
                 anim.onEnd(couldFinish);
             }
             numAnimations--;
@@ -96,12 +96,12 @@ var cancelAnimation = (prop, rootID, couldFinish) => {
     return undefined;
 };
 
-var cancelAnimations = (ref) => {
+var cancelAnimations = (ref, dontFireOnEnd) => {
     var rootNode = ref._rootNodeID;
     var animCont = ongoingAnimations[rootNode];
     if (animCont) {
         for (var prop in animCont.anims) {
-            cancelAnimation(prop, rootNode);
+            cancelAnimation(prop, rootNode, false, dontFireOnEnd);
         }
     }
 };
@@ -238,8 +238,64 @@ var animationMixin = {
             startDummyAnimation(target, p, newState[p], startTime); 
         }
     },
+    easeTo(newState, id) {
+        var target = animationIds[id + this._rootNodeID] || this;
+        var startTime = window.performance.now();
+
+        for (var p in newState) {
+            var newS = newState[p];
+            var startValue = target.animationState[p];
+            var endValue = newS.endValue;
+            var newAnimDuration = newS.duration || 1000;
+
+            var canceledAnim = target.cancelAnimation(p);
+
+            var fade = newS.fade;
+            var velocity = (canceledAnim && canceledAnim.velocity) || 0;
+
+            var easingInput = newS.easingFn || Easing.cubicInOut;
+            var tempEasing = EasingHelpers.ease(easingInput, startValue, endValue);
+
+            var newEasingFn = tempEasing;
+            if (fade) {
+                var fadeDuration = fade.duration || 0.5;
+                var easing = fade.interpolationFn || Easing.quadOut;
+                newEasingFn = (t) => {
+                    if (t < fadeDuration) {
+                        var eased = easing(t/fadeDuration);
+                        return (1 - eased) * (velocity/1000 * t * newAnimDuration + startValue) + eased * tempEasing(t);
+                    } else {
+                        return tempEasing(t);
+                    }
+                };
+            }
+
+            var anim = {
+                value: startValue,
+                finished: false,
+                onEnd: newS.onEnd,
+                velocity: velocity,
+                lastTime: startTime,
+                advance(oldAnim, now) {
+                    var percentage = (now - startTime) / newAnimDuration;
+                    if (percentage >= 1) {
+                        percentage = 1;
+                    }
+                    var newValue = newEasingFn(percentage);
+                    oldAnim.velocity = (newValue - oldAnim.value) / (now - oldAnim.lastTime) * 1000;
+                    oldAnim.lastTime = now;
+                    oldAnim.value = newValue;
+                    if (percentage === 1) {
+                        oldAnim.finished = true;
+                    }
+                    return oldAnim;
+                }
+            };
+            startAnimation(anim, p, target);
+        }
+    },
     componentWillUnmount() {
-        cancelAnimations(this);
+        cancelAnimations(this, true);
     }
 
     /*
