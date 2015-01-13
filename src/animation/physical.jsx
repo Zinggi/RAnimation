@@ -65,8 +65,12 @@ Physical.overDamped = Physical.makeDampedHarmonicOscillator(10, 1.5);
 Physical.decay = (startValue, endValue, startVelocity) => {
     var lambda = startVelocity/(endValue-startValue);
     var n0 = startValue-endValue;
-    var b = startValue;
-    return (t) => n0 * Math.exp(-lambda*t)+b;
+    var b = endValue;
+    if (lambda > 0) {
+        return (t) => n0 * Math.exp(-lambda*t)+b;
+    } else {
+        return (t) => endValue;
+    }
 };
 
 Physical.advanceAnimation = (startTime, endValue, fn) => {
