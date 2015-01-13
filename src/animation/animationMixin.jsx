@@ -61,7 +61,8 @@ var startDummyAnimation = (ref, prop, startValue, startTime) => {
         advance(oldAnim, now) {
             var dt = now - startTime;
             // We scale by 1000 here because our function takes s and not ms.
-            oldAnim.velocity = (oldAnim.newValue - oldAnim.value) / (now - oldAnim.lastTime) * 1000;
+            var v = (oldAnim.newValue - oldAnim.value) / (now - oldAnim.lastTime) * 1000;
+            oldAnim.velocity = 0.8 * v + 0.2 * oldAnim.velocity;
             oldAnim.lastTime = now;
             oldAnim.value = oldAnim.newValue;
             return oldAnim;
