@@ -56,6 +56,19 @@ Physical.underDamped = Physical.makeDampedHarmonicOscillator(10, 0.3);
 Physical.criticalDamped = Physical.makeDampedHarmonicOscillator(10, 1);
 Physical.overDamped = Physical.makeDampedHarmonicOscillator(10, 1.5);
 
+/*
+ * This is a an exponential decay animation.
+ * This animation makes only sense if
+ *     startVelocity/(endValue-startValue) is POSITIVE.
+ * In simpler words, your velocity goes towards your end value.
+ */
+Physical.decay = (startValue, endValue, startVelocity) => {
+    var lambda = startVelocity/(endValue-startValue);
+    var n0 = startValue-endValue;
+    var b = startValue;
+    return (t) => n0 * Math.exp(-lambda*t)+b;
+};
+
 Physical.advanceAnimation = (startTime, endValue, fn) => {
     return (oldAnim, now) => {
         var dt = now - startTime;
