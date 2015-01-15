@@ -1,10 +1,8 @@
 'use strict';
 
-var {Easing, EasingHelpers} = require("./animation/easing");
-
 module.exports = {
-    Easing: Easing,
-    EasingHelpers: EasingHelpers,
+    Easing: require("./animation/easing"),
     animationMixin: require("./animation/animationMixin"),
-    Physical: require("./animation/physical")
+    // Simulation: require("./animation/simulation"),
+    Model: require("./animation/model"),
 };

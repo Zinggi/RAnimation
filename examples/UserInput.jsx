@@ -1,61 +1,90 @@
 "use strict";
 
 var React = require('react/addons'),
-    {animationMixin, Easing, EasingHelpers, Physical} = require('../src/index.jsx');
+    {animationMixin, Easing, Model} = require('../src/index.jsx');
+
+var getTouchPos = (e) => {
+    var touch = (e.touches && e.touches[0]) || e;
+    return {x: touch.clientX, y: touch.clientY};
+};
 
 var Demo = React.createClass({
     mixins: [animationMixin],
-    getInitialState() {
-        return {
-            mousedown: false
-        };
-    },
     componentDidMount() {
-        this.setState({
-            sizeX: this.getDOMNode().clientWidth,
-            sizeY: this.getDOMNode().clientHeight,
-        })
+        window.addEventListener('resize', this.getFrameSize);
+        this.getFrameSize();
+    },
+    componentWillUnmount() {
+        window.removeEventListener('resize', this.getFrameSize);
+    },
+    getFrameSize() {
+        this.animationState.sizeX = this.getDOMNode().clientWidth;
+        this.animationState.sizeY = this.getDOMNode().clientHeight;
     },
     getInitialAnimationState() {
         return {
             x: 0.5,
-            y: 0.5
+            y: 0.5,
+            mousedown: false,
+            sizeX: 1280,
+            sizeY: 720
         };
     },
+    down(e) {
+        this.animationState.mousedown = true;
+        var pos = getTouchPos(e);
+        // this.startDirectUserInput({
+        //     x: pos.x/this.animationState.sizeX,
+        //     y: pos.y/this.animationState.sizeY
+        // });
+        this.startIndirectUserInput({
+            x: {
+                value: pos.x/this.animationState.sizeX,
+                modelFn: Model.controlled.make.dampedHarmonicOscillator(20, 0.7)
+            },
+            y: {
+                value: pos.y/this.animationState.sizeY,
+                modelFn: Model.controlled.make.dampedHarmonicOscillator(20, 0.7)
+            }
+        });
+    },
+    up(e) {
+        this.animationState.mousedown = false;
+        this.simulateBall(0.5, 0.5);
+    },
     render() {
-        return <div style={{height:"100%"}} onMouseMove={this.animateBall}
-                    onMouseDown={(e) => {
-                        this.setState({mousedown: true});
-                        this.startDirectUserInput({x: e.clientX/this.state.sizeX, y: e.clientY/this.state.sizeY});
-                    }}
-                    onMouseUp={() => {
-                        this.setState({mousedown: false});
-                        this.simulateBall(0.5, 0.5);
-                    }}>
+        return <div onMouseMove={this.animateBall} onTouchMove={this.animateBall}
+                    onMouseDown={this.down} onTouchStart={this.down}
+                    onMouseUp={this.up} onTouchEnd={this.up} onTouchCancel={this.up}
+                    style={{height:"100%"}}>
             <div ref="ball"
                  style={{backgroundColor:"red", width: "50px", height: "50px", borderRadius: "10px",
                          position: "absolute", marginLeft: "-25px", marginTop: "-25px"}} />
         </div>;
     },
     animateBall(e) {
-        if (!this.state.mousedown) {
+        if (!this.animationState.mousedown) {
             return;
         }
-        // console.log("x: " + e.clientX/e.target.clientWidth + "  y: " + e.clientY/e.target.clientHeight);
-        this.directUserInput({
-            x: e.clientX/this.state.sizeX,
-            y: e.clientY/this.state.sizeY
+        var pos = getTouchPos(e);
+        // this.directUserInput({
+        //     x: pos.x/this.animationState.sizeX,
+        //     y: pos.y/this.animationState.sizeY
+        // });
+        this.indirectUserInput({
+            x: pos.x/this.animationState.sizeX,
+            y: pos.y/this.animationState.sizeY
         });
     },
     simulateBall(x, y) {
-        this.simulateTo({
+        this.simulateToHalt({
             x: {
                 endValue: x,
-                simulationFn: Physical.underDamped
+                modelFn: Model.controlled.underDamped
             },
             y: {
                 endValue: y,
-                simulationFn: Physical.underDamped
+                modelFn: Model.controlled.underDamped
             }
         });
     },
@@ -66,4 +95,5 @@ var Demo = React.createClass({
     }
 });
 
+React.initializeTouchEvents(true);
 React.render(<Demo />, document.querySelector('body'));

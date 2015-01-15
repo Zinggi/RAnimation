@@ -1,21 +1,21 @@
 "use strict";
 
 var React = require('react/addons'),
-    {animationMixin, Easing, EasingHelpers, Physical} = require('../src/index.jsx');
+    {animationMixin, Easing, Model} = require('../src/index.jsx');
 
 var Demo = React.createClass({
     mixins: [animationMixin],
     getInitialState() {
         return {
             animationType: "physical",
-            duration: 2000,
+            duration: 1.5,
             easing: "quadInOut",
             forwards: true,
             fadeDuration: 0.5,
             fadeEasing: "quadOut",
             useFade: true,
-            frequency: 10,
-            damping: 0.3
+            frequency: 20,
+            damping: 0.6
         };
     },
     getInitialAnimationState() {
@@ -26,12 +26,13 @@ var Demo = React.createClass({
     render() {
         var options = Object.keys(Easing).filter(key => !/make/.test(key)).map(key => <option key={key}>{key}</option>);
 
-        var config = (this.state.animationType === "static") ? <div>
+        var config = (this.state.animationType === "static") ?
+            <div>
                 <select value={this.state.easing}
                         onChange={(e) => {this.setState({easing: e.target.value});}}>
                     {options}
                 </select>
-                duration: <input type="number" step="200" value={this.state.duration}
+                duration: <input type="number" step="0.1" value={this.state.duration}
                                  onChange={(e) => {this.setState({duration: parseFloat(e.target.value)});}} />
                 <br />
                 fade? <input type="checkbox" checked={this.state.useFade}
@@ -44,6 +45,8 @@ var Demo = React.createClass({
                                  onChange={(e) => {this.setState({fadeDuration: parseFloat(e.target.value)});}} />
             </div> :
             <div>
+                NOTE: Since we aren't using a 100% accurate simulation, critical damping actually happens slightly after damping = 1
+                <br />
                 frequency: <input type="number" step="0.5" value={this.state.frequency}
                                  onChange={(e) => {this.setState({frequency: parseFloat(e.target.value)});}} />
                 damping: <input type="number" step="0.1" value={this.state.damping}
@@ -60,7 +63,7 @@ var Demo = React.createClass({
             <br />
             {config}
             <br />
-            <button onClick={this.startAnimation}>
+            <button onClick={this.animateBall}>
                 Animate!
             </button>
 
@@ -68,16 +71,15 @@ var Demo = React.createClass({
                  style={{backgroundColor:"red", width: "50px", height: "50px", borderRadius: "10px", position: "absolute"}} />
         </div>;
     },
-    startAnimation() {
+    animateBall() {
         var end = (this.state.forwards) ? 1 : 0;
         var isAtEnd = Math.abs(this.animationState.x - end) === 1;
         var isStatic = this.state.animationType === "static";
         if (!isStatic) {
-            this.simulateTo({
+            this.simulateToHalt({
                 x: {
                     endValue: end,
-                    simulationFn: Physical.makeDampedHarmonicOscillator(this.state.frequency, this.state.damping),
-                    onEnd: (didComplete) => console.log(didComplete)
+                    modelFn: Model.controlled.make.dampedHarmonicOscillator(this.state.frequency, this.state.damping)
                 }
             });
         } else {
@@ -86,7 +88,6 @@ var Demo = React.createClass({
                     endValue: end,
                     duration: this.state.duration * Math.abs(this.animationState.x - end),
                     easingFn: Easing[this.state.easing],
-                    onEnd: (didComplete) => console.log(didComplete),
                     fade: (this.state.useFade && !isAtEnd) ? {
                         duration: this.state.fadeDuration,
                         interpolationFn: Easing[this.state.fadeEasing]

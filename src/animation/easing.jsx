@@ -1,6 +1,6 @@
 "use strict";
 
-var EasingHelpers = {
+var helpers = {
     /*
      * Use this to create a new easing function from 'start' to 'end'
      * based on an existing one
@@ -31,6 +31,24 @@ var EasingHelpers = {
     squeeze(f, x1, x2) {
         var y1 = f(x1);
         return t => (f(x1 + t*(x2-x1)) - y1) / (f(x2) - y1);
+    },
+    /*
+     * Used for implementing easing animations
+     */
+    advance(startTime, animDuration, easing) {
+        return (oldAnim, dt, now) => {
+            var percentage = (now - startTime) / animDuration;
+            if (percentage >= 1) {
+                percentage = 1;
+            }
+            var newValue = easing(percentage);
+            oldAnim.velocity = (newValue - oldAnim.value) / dt;
+            oldAnim.value = newValue;
+            if (percentage === 1) {
+                oldAnim.finished = true;
+            }
+            return oldAnim;
+        };
     }
 };
 
@@ -38,11 +56,11 @@ var EasingHelpers = {
 /*
  * This is a collection of nice easing functions
  *
- * The functions that start with 'make' are functions that
- * take a configuration parameters and return a new easing function.
+ * The functions inside the 'make' object are functions that
+ * take configuration parameters and return a new easing function.
  */
 var Easing = {
-    /* Linear interpolation. DON'T use, ugly! */
+    /* Linear interpolation. Mostly ugly. */
     linear(t) {
         return t;
     },
@@ -50,54 +68,77 @@ var Easing = {
     quadIn(t) {
         return t * t;
     },
-    quadOut(t) { return EasingHelpers.toEaseOut(Easing.quadIn)(t); },
-    quadInOut(t) { return EasingHelpers.toEaseInOut(Easing.quadIn)(t); },
+    quadOut(t) { return helpers.toEaseOut(Easing.quadIn)(t); },
+    quadInOut(t) { return helpers.toEaseInOut(Easing.quadIn)(t); },
 
     /* t^3 */
     cubicIn(t) {
         return Math.pow(t, 3);
     },
-    cubicOut(t) { return EasingHelpers.toEaseOut(Easing.cubicIn)(t); },
-    cubicInOut(t) { return EasingHelpers.toEaseInOut(Easing.cubicIn)(t); },
-
-    /* returns f(t) = t^e */
-    makePolyIn(exponent) {
-        return t => Math.pow(t, exponent);
-    },
+    cubicOut(t) { return helpers.toEaseOut(Easing.cubicIn)(t); },
+    cubicInOut(t) { return helpers.toEaseInOut(Easing.cubicIn)(t); },
 
     /* 1 - cos(t * Pi/2) */
     sinIn(t) {
         return 1 - Math.cos(t * Math.PI/2);
     },
-    sinOut(t) { return EasingHelpers.toEaseOut(Easing.sinIn)(t); },
-    sinInOut(t) { return EasingHelpers.toEaseInOut(Easing.sinIn)(t); },
+    sinOut(t) { return helpers.toEaseOut(Easing.sinIn)(t); },
+    sinInOut(t) { return helpers.toEaseInOut(Easing.sinIn)(t); },
 
-    /* 2^(10(t-1)) . Note that expIn(0)!=0, but it's close enough */
+    /* 2^(10(t-1)). Note that expIn(0)!=0, but it's close enough */
     expIn(t) {
         return Math.pow(2, 10 * (t - 1));
     },
-    expOut(t) { return EasingHelpers.toEaseOut(Easing.expIn)(t); },
-    expInOut(t) { return EasingHelpers.toEaseInOut(Easing.expIn)(t); },
+    expOut(t) { return helpers.toEaseOut(Easing.expIn)(t); },
+    expInOut(t) { return helpers.toEaseInOut(Easing.expIn)(t); },
 
     /* 1 - sqrt(1-t^2) */
     circleIn(t) {
         return 1 - Math.sqrt(1 - t * t);
     },
-    circleOut(t) { return EasingHelpers.toEaseOut(Easing.circleIn)(t); },
-    circleInOut(t) { return EasingHelpers.toEaseInOut(Easing.circleIn)(t); },
+    circleOut(t) { return helpers.toEaseOut(Easing.circleIn)(t); },
+    circleInOut(t) { return helpers.toEaseInOut(Easing.circleIn)(t); },
 
-    /* a comic style function, going backwards first */
-    makeBackIn(amplitude) {
-        return x => x*x*((1+amplitude)*x-amplitude);
-    },
+    /* A comic style function, going back first */
     backIn(t) {
         return Easing.makeBackIn(1.70158)(t);
     },
-    backOut(t) { return EasingHelpers.toEaseOut(Easing.backIn)(t); },
-    /* DON'T use, ugly! */
-    backInOut(t) { return EasingHelpers.toEaseInOut(Easing.backIn)(t); },
+    backOut(t) { return helpers.toEaseOut(Easing.backIn)(t); },
+    backInOut(t) { return helpers.toEaseInOut(Easing.backIn)(t); },
 
 
+    /* A spring like function */
+    elasticIn(t) {
+        // return Easing.makeElasticIn(7, 3)(t);
+        return Math.sin(13.0 * t * Math.PI/2) * Math.pow(2.0, 10.0 * (t - 1.0));
+    },
+    elasticOut(t) { return helpers.toEaseOut(Easing.elasticIn)(t); },
+    elasticInOut(t) { return helpers.toEaseInOut(Easing.elasticIn)(t); },
+
+
+    /* a bouncy function */
+    bounceIn(t) {
+        // return Easing.makeBounceIn(2, 3)(t);
+        return helpers.toEaseOut(Easing.bounceOut)(t);
+    },
+    bounceOut(t) { 
+        return t < 1 / 2.75 ? 7.5625 * t * t
+            : t < 2 / 2.75 ? 7.5625 * (t -= 1.5 / 2.75) * t + 0.75
+            : t < 2.5 / 2.75 ? 7.5625 * (t -= 2.25 / 2.75) * t + 0.9375
+            : 7.5625 * (t -= 2.625 / 2.75) * t + 0.984375;
+    },
+    bounceInOut(t) { return helpers.toEaseInOut(Easing.bounceIn)(t); },
+};
+
+var make = {
+    /* returns f(t) = t^e */
+    polyIn(exponent) {
+        return t => Math.pow(t, exponent);
+    },
+    /* a comic style function, going backwards first */
+    backIn(amplitude) {
+        return x => x*x*((1+amplitude)*x-amplitude);
+    },
     /* 
      * returns a spring like function
      * Thanks @Microsoft
@@ -105,19 +146,11 @@ var Easing = {
      * @springiness: how much it swings, 7 seems to be a nice value.
      * @numberOfSwings: how many swings, Integer.
      */
-    makeElasticIn(springiness, numberOfSwings) {
+    elasticIn(springiness, numberOfSwings) {
         var s = springiness;
         var n = Math.round(numberOfSwings);
         return x => (Math.exp(s*x)-1.0)/(Math.exp(s)-1.0)*(Math.sin((Math.PI * 2.0 * n + Math.PI * 0.5) * x));
     },
-    elasticIn(t) {
-        // return Easing.makeElasticIn(7, 3)(t);
-        return Math.sin(13.0 * t * Math.PI/2) * Math.pow(2.0, 10.0 * (t - 1.0));
-    },
-    elasticOut(t) { return EasingHelpers.toEaseOut(Easing.elasticIn)(t); },
-    /* DON'T use, ugly! */
-    elasticInOut(t) { return EasingHelpers.toEaseInOut(Easing.elasticIn)(t); },
-
     /*
      * returns a cartoony bounce function.
      * Thanks @Microsoft
@@ -126,7 +159,7 @@ var Easing = {
      * @bounciness: how damped the bounces are, should be bigger than 1.
      *     2 will result in bounces of half the height
      */
-    makeBounceIn(bounces, bounciness) {
+    bounceIn(bounces, bounciness) {
         // Clamp the bounciness so we don't hit a divide by zero
         if (bounciness <= 1) {
             bounciness = 1.001;
@@ -159,22 +192,9 @@ var Easing = {
             return (-amplitude / (radius * radius)) * (timeRelativeToPeak - radius) * (timeRelativeToPeak + radius);
         };
     },
-    /* a bouncy function */
-    bounceIn(t) {
-        // return Easing.makeBounceIn(2, 3)(t);
-        return EasingHelpers.toEaseOut(Easing.bounceOut)(t);
-    },
-    bounceOut(t) { 
-        return t < 1 / 2.75 ? 7.5625 * t * t
-            : t < 2 / 2.75 ? 7.5625 * (t -= 1.5 / 2.75) * t + 0.75
-            : t < 2.5 / 2.75 ? 7.5625 * (t -= 2.25 / 2.75) * t + 0.9375
-            : 7.5625 * (t -= 2.625 / 2.75) * t + 0.984375;
-    },
-    /* DON'T use, ugly! */
-    bounceInOut(t) { return EasingHelpers.toEaseInOut(Easing.bounceIn)(t); },
 };
 
-module.exports = {
-    Easing: Easing,
-    EasingHelpers: EasingHelpers,
-};
+Easing.make = make;
+Easing.helpers = helpers;
+
+module.exports = Easing;

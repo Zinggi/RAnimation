@@ -47,21 +47,21 @@
 	"use strict";
 
 	var React = __webpack_require__(2),
-	    $__0=     __webpack_require__(1),animationMixin=$__0.animationMixin,Easing=$__0.Easing,EasingHelpers=$__0.EasingHelpers,Physical=$__0.Physical;
+	    $__0=    __webpack_require__(1),animationMixin=$__0.animationMixin,Easing=$__0.Easing,Model=$__0.Model;
 
 	var Demo = React.createClass({displayName: "Demo",
 	    mixins: [animationMixin],
 	    getInitialState:function() {
 	        return {
 	            animationType: "physical",
-	            duration: 2000,
+	            duration: 1.5,
 	            easing: "quadInOut",
 	            forwards: true,
 	            fadeDuration: 0.5,
 	            fadeEasing: "quadOut",
 	            useFade: true,
-	            frequency: 10,
-	            damping: 0.3
+	            frequency: 20,
+	            damping: 0.6
 	        };
 	    },
 	    getInitialAnimationState:function() {
@@ -72,12 +72,13 @@
 	    render:function() {
 	        var options = Object.keys(Easing).filter(function(key)  {return !/make/.test(key);}).map(function(key)  {return React.createElement("option", {key: key}, key);});
 
-	        var config = (this.state.animationType === "static") ? React.createElement("div", null, 
+	        var config = (this.state.animationType === "static") ?
+	            React.createElement("div", null, 
 	                React.createElement("select", {value: this.state.easing, 
 	                        onChange: function(e)  {this.setState({easing: e.target.value});}.bind(this)}, 
 	                    options
 	                ), 
-	                "duration: ", React.createElement("input", {type: "number", step: "200", value: this.state.duration, 
+	                "duration: ", React.createElement("input", {type: "number", step: "0.1", value: this.state.duration, 
 	                                 onChange: function(e)  {this.setState({duration: parseFloat(e.target.value)});}.bind(this)}), 
 	                React.createElement("br", null), 
 	                "fade? ", React.createElement("input", {type: "checkbox", checked: this.state.useFade, 
@@ -90,6 +91,8 @@
 	                                 onChange: function(e)  {this.setState({fadeDuration: parseFloat(e.target.value)});}.bind(this)})
 	            ) :
 	            React.createElement("div", null, 
+	                "NOTE: Since we aren't using a 100% accurate simulation, critical damping actually happens slightly after damping = 1", 
+	                React.createElement("br", null), 
 	                "frequency: ", React.createElement("input", {type: "number", step: "0.5", value: this.state.frequency, 
 	                                 onChange: function(e)  {this.setState({frequency: parseFloat(e.target.value)});}.bind(this)}), 
 	                "damping: ", React.createElement("input", {type: "number", step: "0.1", value: this.state.damping, 
@@ -106,7 +109,7 @@
 	            React.createElement("br", null), 
 	            config, 
 	            React.createElement("br", null), 
-	            React.createElement("button", {onClick: this.startAnimation}, 
+	            React.createElement("button", {onClick: this.animateBall}, 
 	                "Animate!"
 	            ), 
 
@@ -114,16 +117,15 @@
 	                 style: {backgroundColor:"red", width: "50px", height: "50px", borderRadius: "10px", position: "absolute"}})
 	        );
 	    },
-	    startAnimation:function() {
+	    animateBall:function() {
 	        var end = (this.state.forwards) ? 1 : 0;
 	        var isAtEnd = Math.abs(this.animationState.x - end) === 1;
 	        var isStatic = this.state.animationType === "static";
 	        if (!isStatic) {
-	            this.simulateTo({
+	            this.simulateToHalt({
 	                x: {
 	                    endValue: end,
-	                    simulationFn: Physical.makeDampedHarmonicOscillator(this.state.frequency, this.state.damping),
-	                    onEnd: function(didComplete)  {return console.log(didComplete);}
+	                    modelFn: Model.controlled.make.dampedHarmonicOscillator(this.state.frequency, this.state.damping)
 	                }
 	            });
 	        } else {
@@ -132,7 +134,6 @@
 	                    endValue: end,
 	                    duration: this.state.duration * Math.abs(this.animationState.x - end),
 	                    easingFn: Easing[this.state.easing],
-	                    onEnd: function(didComplete)  {return console.log(didComplete);},
 	                    fade: (this.state.useFade && !isAtEnd) ? {
 	                        duration: this.state.fadeDuration,
 	                        interpolationFn: Easing[this.state.fadeEasing]
@@ -158,13 +159,11 @@
 
 	'use strict';
 
-	var $__0=   __webpack_require__(3),Easing=$__0.Easing,EasingHelpers=$__0.EasingHelpers;
-
 	module.exports = {
-	    Easing: Easing,
-	    EasingHelpers: EasingHelpers,
+	    Easing: __webpack_require__(3),
 	    animationMixin: __webpack_require__(4),
-	    Physical: __webpack_require__(5)
+	    // Simulation: require("./animation/simulation"),
+	    Model: __webpack_require__(5),
 	};
 
 /***/ },
@@ -180,7 +179,7 @@
 
 	"use strict";
 
-	var EasingHelpers = {
+	var helpers = {
 	    /*
 	     * Use this to create a new easing function from 'start' to 'end'
 	     * based on an existing one
@@ -211,6 +210,24 @@
 	    squeeze:function(f, x1, x2) {
 	        var y1 = f(x1);
 	        return function(t)  {return (f(x1 + t*(x2-x1)) - y1) / (f(x2) - y1);};
+	    },
+	    /*
+	     * Used for implementing easing animations
+	     */
+	    advance:function(startTime, animDuration, easing) {
+	        return function(oldAnim, dt, now)  {
+	            var percentage = (now - startTime) / animDuration;
+	            if (percentage >= 1) {
+	                percentage = 1;
+	            }
+	            var newValue = easing(percentage);
+	            oldAnim.velocity = (newValue - oldAnim.value) / dt;
+	            oldAnim.value = newValue;
+	            if (percentage === 1) {
+	                oldAnim.finished = true;
+	            }
+	            return oldAnim;
+	        };
 	    }
 	};
 
@@ -218,11 +235,11 @@
 	/*
 	 * This is a collection of nice easing functions
 	 *
-	 * The functions that start with 'make' are functions that
-	 * take a configuration parameters and return a new easing function.
+	 * The functions inside the 'make' object are functions that
+	 * take configuration parameters and return a new easing function.
 	 */
 	var Easing = {
-	    /* Linear interpolation. DON'T use, ugly! */
+	    /* Linear interpolation. Mostly ugly. */
 	    linear:function(t) {
 	        return t;
 	    },
@@ -230,54 +247,77 @@
 	    quadIn:function(t) {
 	        return t * t;
 	    },
-	    quadOut:function(t) { return EasingHelpers.toEaseOut(Easing.quadIn)(t); },
-	    quadInOut:function(t) { return EasingHelpers.toEaseInOut(Easing.quadIn)(t); },
+	    quadOut:function(t) { return helpers.toEaseOut(Easing.quadIn)(t); },
+	    quadInOut:function(t) { return helpers.toEaseInOut(Easing.quadIn)(t); },
 
 	    /* t^3 */
 	    cubicIn:function(t) {
 	        return Math.pow(t, 3);
 	    },
-	    cubicOut:function(t) { return EasingHelpers.toEaseOut(Easing.cubicIn)(t); },
-	    cubicInOut:function(t) { return EasingHelpers.toEaseInOut(Easing.cubicIn)(t); },
-
-	    /* returns f(t) = t^e */
-	    makePolyIn:function(exponent) {
-	        return function(t)  {return Math.pow(t, exponent);};
-	    },
+	    cubicOut:function(t) { return helpers.toEaseOut(Easing.cubicIn)(t); },
+	    cubicInOut:function(t) { return helpers.toEaseInOut(Easing.cubicIn)(t); },
 
 	    /* 1 - cos(t * Pi/2) */
 	    sinIn:function(t) {
 	        return 1 - Math.cos(t * Math.PI/2);
 	    },
-	    sinOut:function(t) { return EasingHelpers.toEaseOut(Easing.sinIn)(t); },
-	    sinInOut:function(t) { return EasingHelpers.toEaseInOut(Easing.sinIn)(t); },
+	    sinOut:function(t) { return helpers.toEaseOut(Easing.sinIn)(t); },
+	    sinInOut:function(t) { return helpers.toEaseInOut(Easing.sinIn)(t); },
 
-	    /* 2^(10(t-1)) . Note that expIn(0)!=0, but it's close enough */
+	    /* 2^(10(t-1)). Note that expIn(0)!=0, but it's close enough */
 	    expIn:function(t) {
 	        return Math.pow(2, 10 * (t - 1));
 	    },
-	    expOut:function(t) { return EasingHelpers.toEaseOut(Easing.expIn)(t); },
-	    expInOut:function(t) { return EasingHelpers.toEaseInOut(Easing.expIn)(t); },
+	    expOut:function(t) { return helpers.toEaseOut(Easing.expIn)(t); },
+	    expInOut:function(t) { return helpers.toEaseInOut(Easing.expIn)(t); },
 
 	    /* 1 - sqrt(1-t^2) */
 	    circleIn:function(t) {
 	        return 1 - Math.sqrt(1 - t * t);
 	    },
-	    circleOut:function(t) { return EasingHelpers.toEaseOut(Easing.circleIn)(t); },
-	    circleInOut:function(t) { return EasingHelpers.toEaseInOut(Easing.circleIn)(t); },
+	    circleOut:function(t) { return helpers.toEaseOut(Easing.circleIn)(t); },
+	    circleInOut:function(t) { return helpers.toEaseInOut(Easing.circleIn)(t); },
 
-	    /* a comic style function, going backwards first */
-	    makeBackIn:function(amplitude) {
-	        return function(x)  {return x*x*((1+amplitude)*x-amplitude);};
-	    },
+	    /* A comic style function, going back first */
 	    backIn:function(t) {
 	        return Easing.makeBackIn(1.70158)(t);
 	    },
-	    backOut:function(t) { return EasingHelpers.toEaseOut(Easing.backIn)(t); },
-	    /* DON'T use, ugly! */
-	    backInOut:function(t) { return EasingHelpers.toEaseInOut(Easing.backIn)(t); },
+	    backOut:function(t) { return helpers.toEaseOut(Easing.backIn)(t); },
+	    backInOut:function(t) { return helpers.toEaseInOut(Easing.backIn)(t); },
 
 
+	    /* A spring like function */
+	    elasticIn:function(t) {
+	        // return Easing.makeElasticIn(7, 3)(t);
+	        return Math.sin(13.0 * t * Math.PI/2) * Math.pow(2.0, 10.0 * (t - 1.0));
+	    },
+	    elasticOut:function(t) { return helpers.toEaseOut(Easing.elasticIn)(t); },
+	    elasticInOut:function(t) { return helpers.toEaseInOut(Easing.elasticIn)(t); },
+
+
+	    /* a bouncy function */
+	    bounceIn:function(t) {
+	        // return Easing.makeBounceIn(2, 3)(t);
+	        return helpers.toEaseOut(Easing.bounceOut)(t);
+	    },
+	    bounceOut:function(t) { 
+	        return t < 1 / 2.75 ? 7.5625 * t * t
+	            : t < 2 / 2.75 ? 7.5625 * (t -= 1.5 / 2.75) * t + 0.75
+	            : t < 2.5 / 2.75 ? 7.5625 * (t -= 2.25 / 2.75) * t + 0.9375
+	            : 7.5625 * (t -= 2.625 / 2.75) * t + 0.984375;
+	    },
+	    bounceInOut:function(t) { return helpers.toEaseInOut(Easing.bounceIn)(t); },
+	};
+
+	var make = {
+	    /* returns f(t) = t^e */
+	    polyIn:function(exponent) {
+	        return function(t)  {return Math.pow(t, exponent);};
+	    },
+	    /* a comic style function, going backwards first */
+	    backIn:function(amplitude) {
+	        return function(x)  {return x*x*((1+amplitude)*x-amplitude);};
+	    },
 	    /* 
 	     * returns a spring like function
 	     * Thanks @Microsoft
@@ -285,19 +325,11 @@
 	     * @springiness: how much it swings, 7 seems to be a nice value.
 	     * @numberOfSwings: how many swings, Integer.
 	     */
-	    makeElasticIn:function(springiness, numberOfSwings) {
+	    elasticIn:function(springiness, numberOfSwings) {
 	        var s = springiness;
 	        var n = Math.round(numberOfSwings);
 	        return function(x)  {return (Math.exp(s*x)-1.0)/(Math.exp(s)-1.0)*(Math.sin((Math.PI * 2.0 * n + Math.PI * 0.5) * x));};
 	    },
-	    elasticIn:function(t) {
-	        // return Easing.makeElasticIn(7, 3)(t);
-	        return Math.sin(13.0 * t * Math.PI/2) * Math.pow(2.0, 10.0 * (t - 1.0));
-	    },
-	    elasticOut:function(t) { return EasingHelpers.toEaseOut(Easing.elasticIn)(t); },
-	    /* DON'T use, ugly! */
-	    elasticInOut:function(t) { return EasingHelpers.toEaseInOut(Easing.elasticIn)(t); },
-
 	    /*
 	     * returns a cartoony bounce function.
 	     * Thanks @Microsoft
@@ -306,7 +338,7 @@
 	     * @bounciness: how damped the bounces are, should be bigger than 1.
 	     *     2 will result in bounces of half the height
 	     */
-	    makeBounceIn:function(bounces, bounciness) {
+	    bounceIn:function(bounces, bounciness) {
 	        // Clamp the bounciness so we don't hit a divide by zero
 	        if (bounciness <= 1) {
 	            bounciness = 1.001;
@@ -339,25 +371,12 @@
 	            return (-amplitude / (radius * radius)) * (timeRelativeToPeak - radius) * (timeRelativeToPeak + radius);
 	        };
 	    },
-	    /* a bouncy function */
-	    bounceIn:function(t) {
-	        // return Easing.makeBounceIn(2, 3)(t);
-	        return EasingHelpers.toEaseOut(Easing.bounceOut)(t);
-	    },
-	    bounceOut:function(t) { 
-	        return t < 1 / 2.75 ? 7.5625 * t * t
-	            : t < 2 / 2.75 ? 7.5625 * (t -= 1.5 / 2.75) * t + 0.75
-	            : t < 2.5 / 2.75 ? 7.5625 * (t -= 2.25 / 2.75) * t + 0.9375
-	            : 7.5625 * (t -= 2.625 / 2.75) * t + 0.984375;
-	    },
-	    /* DON'T use, ugly! */
-	    bounceInOut:function(t) { return EasingHelpers.toEaseInOut(Easing.bounceIn)(t); },
 	};
 
-	module.exports = {
-	    Easing: Easing,
-	    EasingHelpers: EasingHelpers,
-	};
+	Easing.make = make;
+	Easing.helpers = helpers;
+
+	module.exports = Easing;
 
 /***/ },
 /* 4 */
@@ -366,23 +385,39 @@
 	"use strict";
 
 	__webpack_require__(7);
-	var $__0=   __webpack_require__(3),Easing=$__0.Easing,EasingHelpers=$__0.EasingHelpers;
-	var Physical = __webpack_require__(5);
 
+	var Easing = __webpack_require__(3);
+	var EasingHelpers = Easing.helpers;
+	var Model = __webpack_require__(5);
+	var ModelHelpers = Model.helpers;
 
+	// TODO: check simulation.jsx for comment
+	// var Simulation = require("./simulation");
+	// var SimulationHelpers = Simulation.helpers;
+
+	// A little helper function, as we do all calculations in seconds
+	var nowInSeconds = function()  {return window.performance.now() / 1000;};
+
+	// Here we keep track of all ongoing animations
 	var ongoingAnimations = {};
+	// This is the current id returned by requestAnimationFrame
 	var animationFrame;
+	// For performance reasons, we keep track of the # of animations here.
 	var numAnimations = 0;
+	// The last time we rendered a frame
+	var lastFrame = nowInSeconds();
 
+	// the animation loop
 	var doAnimations = function()  {
-	    var now = window.performance.now();
+	    var now = nowInSeconds();
+	    var dt = now - lastFrame;
 	    for (var p in ongoingAnimations) {
-	        var animCont = ongoingAnimations[p];
-	        var ref = animCont.ref;
-	        var anims = animCont.anims;
+	        var animContainer = ongoingAnimations[p];
+	        var ref = animContainer.ref;
+	        var anims = animContainer.anims;
 	        for (var prop in anims) {
 	            var anim = anims[prop];
-	            var newAnim = anim.advance(anim, now);
+	            var newAnim = anim.advance(anim, dt, now);
 	            anims[prop] = newAnim;
 	            ref.animationState[prop] = newAnim.value;
 	            if (newAnim.finished) {
@@ -396,6 +431,7 @@
 	    } else {
 	        animationFrame = undefined;
 	    }
+	    lastFrame = now;
 	};
 
 	var startAnimation = function(anim, prop, ref)  {
@@ -408,40 +444,61 @@
 	    animCont.anims[prop] = anim;
 
 	    if (!animationFrame) {
+	        lastFrame = nowInSeconds();
 	        animationFrame = window.requestAnimationFrame(doAnimations);
 	    }
 	};
 
-	var startDummyAnimation = function(ref, prop, startValue, startTime)  {
-	    startAnimation({
-	        advance:function(oldAnim, now) {
-	            var dt = now - startTime;
-	            // We scale by 1000 here because our function takes s and not ms.
-	            oldAnim.velocity = (oldAnim.newValue - oldAnim.value) / (now - oldAnim.lastTime) * 1000;
-	            oldAnim.lastTime = now;
-	            oldAnim.value = oldAnim.newValue;
-	            return oldAnim;
-	        },
-	        newValue: startValue,
-	        value: startValue,
-	        velocity: 0,
-	        finished: false,
-	        lastTime: startTime
-	    }, prop, ref);
-	};
-
-	var modifyDummyAnimation = function(ref, prop, newValue)  {
+	var getAnimation = function(ref, prop)  {
 	    var rootID = ref._rootNodeID;
 	    var animCont = ongoingAnimations[rootID];
 	    if (animCont) {
-	        var anim = animCont.anims[prop];
-	        if (anim) {
-	            anim.newValue = newValue;
-	        }
+	        return animCont.anims[prop];
+	    }
+	    return undefined;
+	};
+
+	// This is used for direct user input.
+	// A dummy animation makes sure to track the current velocity
+	var startDirectInputAnimation = function(ref, prop, startValue)  {
+	    startAnimation({
+	        advance:function(oldAnim, dt, now) {
+	            var v = (oldAnim.endValue - oldAnim.value) / dt;
+	            // Smooth the velocity, to get rid of too crazy movements...
+	            oldAnim.velocity = 0.8 * v + 0.2 * oldAnim.velocity;
+	            oldAnim.value = oldAnim.endValue;
+	            return oldAnim;
+	        },
+	        endValue: startValue,
+	        value: startValue,
+	        velocity: 0,
+	        finished: false
+	    }, prop, ref);
+	};
+
+	// This is used to start a simulation based on a model.
+	var startModelSimulation = function(ref, prop, startValue, endValue, velocity, acceleration, modelFn, endCondition, onEnd)  {
+	    startAnimation({
+	        advance: modelFn,
+	        endValue: endValue,
+	        value: startValue,
+	        velocity: velocity,
+	        acceleration: acceleration,
+	        finished: false,
+	        endCondition: endCondition,
+	        onEnd: onEnd
+	    }, prop, ref);
+	};
+
+	// For user input, we need to be able to modify an ongoing animations endValue.
+	var modifyAnimationEndValue = function(ref, prop, newValue)  {
+	    var anim = getAnimation(ref, prop);
+	    if (anim) {
+	        anim.endValue = newValue;
 	    }
 	};
 
-
+	// Cancels an animation, calls onEnd and returns the canceled animation.
 	var cancelAnimation = function(prop, rootID, couldFinish, dontFireOnEnd)  {
 	    var animCont = ongoingAnimations[rootID];
 	    if (animCont) {
@@ -461,6 +518,7 @@
 	    return undefined;
 	};
 
+	// Cancel all animations for the given ref.
 	var cancelAnimations = function(ref, dontFireOnEnd)  {
 	    var rootNode = ref._rootNodeID;
 	    var animCont = ongoingAnimations[rootNode];
@@ -471,27 +529,59 @@
 	    }
 	};
 
-	// Here we store all animationIds to keep a references to objects containing animations.
-	var animationIds = {};
 
 	var animationMixin = {
 	    componentDidMount:function() {
 	        // set the initial state
 	        this.animationState = this.getInitialAnimationState();
-
-	        // If this component has an ID, store a reference to it
-	        if (this.props.animationId) {
-	            animationIds[this.props.animationId + this._owner._rootNodeID] = this;
-	        }
 	        // perform first animation
-	        // (TODO): maybe pass the previous values and/or the delta time?
 	        this.performAnimation();
+	    },
+
+	    /*
+	     * A low level API if, for any reason, you need full control over the animation.
+	     * 
+	     * You could also modify an ongoing animation by
+	     * calling getAnimation and then modifying the returned animation.
+	     *
+	     * @anim: an object with at least the fallowing properties:
+	     * {
+	     *     // -- Required --
+	     *     value: startValue,
+	     *         // The current value of your animation
+	     *     advance(oldAnim, dt, now) { ... }
+	     *         // A function that should return a new animation object,
+	     *         // containing your new value among other things
+	     *         // you want to keep track of. It's OK (and better for performance)
+	     *         // to directly modify oldAnim, as its not used after this call.
+	     *         // dt is the time that passed since the last frame. (in s)
+	     *         // now is the current time the frame was rendered. (in s)
+	     *     // -- Optional, but highly recommended --
+	     *     finished: false,
+	     *         // finished is used to indicate if the animation is over.
+	     *         // If advance(...) sets this to true, cancelAnimation will
+	     *         // be called.
+	     *     onEnd: newS.onEnd,
+	     *         // When cancelAnimation is called, it will call onEnd if its given
+	     *     velocity: velocity,
+	     *         // It's a good idea to keep track of the velocity, as this is valuable
+	     *         // information for a new animation, interrupting the current one. (in value/s)
+	     *     // -- You can have as many more properties you like --
+	     *     acceleration: acceleration,
+	     *         // For some integration techniques,
+	     *         // it might be needed to keep track of the acceleration.
+	     *     ...
+	     * }
+	     */
+	    startAnimation:function(anim, p) {
+	        startAnimation(anim, p, this);
 	    },
 
 	    /*
 	     * Cancels an ongoing animation for the animationState property p.
 	     * Returns the canceled animation object.
-	     * This contains a velocity property, among some other implementation details:
+	     * 
+	     * This contains a velocity property, among some other implementation details
 	     */
 	    cancelAnimation:function(p, couldFinish) {
 	        couldFinish = !!couldFinish;
@@ -499,6 +589,22 @@
 	    },
 
 	    /*
+	     * Returns the current animation for prop or
+	     * undefined if there is no animation for this property.
+	     *
+	     * The returned object contains the velocity
+	     * plus some implementation details.
+	     *
+	     * Note that you could modify the ongoing animation here,
+	     * but that should never be necessary.
+	     */
+	    getAnimation:function(prop) {
+	        return getAnimation(this, prop);
+	    },
+
+	    /*
+	     * TODO: check comment in simulation.jsx!
+	     * 
 	     * Simulates the transition from the current state to the given newState,
 	     * respecting the inertia.
 	     * 
@@ -509,54 +615,135 @@
 	     *     {
 	     *         x: {
 	     *             endValue: 42, // Where to simulate to.
-	     *                           // Either a value
-	     *                           // -OR- a function of type: (velocity: Num) -> Num
+	     *                           // a number
+	     *                           // -OR-
+	     *                           // a function of type: (velocity: Num) -> Num
 	     *                           //     This is useful if your end value depends on the previous velocity.
 	     *                           // REQUIRED
-	     *             simulationFn: Physical.underDamped, // A function f of type:
+	     *             simulationFn: Simulation.underDamped, // A function f of type:
 	     *                 // f(startValue: Num, endValue: Num, startVelocity: Num) -> (t: Num n -> Num)
 	     *                 //   where n > 0, f(x0, x1, v0)(0) = x0, f(x0, x1, v0)(infinity) = x1, df(x0, x1, v0)/dt(0) = v0
 	     *                 // The simulation ends at t:
-	     *                 //   |f(x0, x1, v0)(t)| < eps and |df(x0, x1, v0)/dt(t)| < eps, for a very small eps.
-	     *                 // Useful functions can be found in Physical.*
-	     *                 // DEFAULT: Physical.criticalDamped
+	     *                 //   |f(x0, x1, v0)(t) - x1| < eps and |df(x0, x1, v0)/dt(t)| < eps, for a very small eps.
+	     *                 // Useful functions can be found in Simulation.*
+	     *                 // DEFAULT: Simulation.criticalDamped
 	     *             onEnd: callback // A callback that gets called with true, when the simulation finished
 	     *                             // or with false, when interrupted.
 	     *         }, ...
 	     *     }
 	     */
-	    simulateTo:function(newState, id) {
-	        var target = animationIds[id + this._rootNodeID] || this;
-	        var startTime = window.performance.now();
+	    // simulateTo(newState) {
+	    //     var startTime = nowInSeconds();
 
+	    //     for (var p in newState) {
+	    //         var config = newState[p];
+
+	    //         var startValue = this.animationState[p];
+	            
+	    //         var canceledAnim = this.cancelAnimation(p);
+	    //         var velocity = canceledAnim && canceledAnim.velocity || 0;
+	    //         var simulationFn = config.simulationFn || Simulation.criticalDamped;
+
+	    //         var endValue;
+	    //         if (typeof config.endValue === "function") {
+	    //             endValue = config.endValue(velocity);
+	    //         } else {
+	    //             endValue = config.endValue;
+	    //         }
+
+	    //         var finalSimFn = simulationFn(startValue, endValue, velocity);
+
+	    //         var anim = {
+	    //             value: startValue,
+	    //             velocity: velocity,
+	    //             finished: false,
+	    //             onEnd: config.onEnd,
+	    //             advance: SimulationHelpers.advanceAnimation(startTime, endValue, finalSimFn)
+	    //         };
+	    //         startAnimation(anim, p, this);
+	    //     }
+	    // },
+
+	    /*
+	     * Use to simulate a value to a halt. This can be used for example after a directUserInput,
+	     * for instance in a scrolling list.
+	     * 
+	     * There are controlled and uncontrolled model functions.
+	     *     Controlled: You will know where it will end.
+	     *         examples: spring-damper model.
+	     *     Uncontrolled: It will just follow the modeled behavior until it comes to a halt.
+	     *                   Note that you might still know where it ends,
+	     *                   e.g. with gravity it will eventually stop at the ground.
+	     *         examples: friction, gravity
+	     * 
+	     *  + Physically accurate, natural movement
+	     *  - You don't know when it stops exactly, less control.
+	     *  - If you choose an uncontrolled model, you might not even know where it stops.
+	     *
+	     * @newState: an object like:
+	     * {
+	     *     x: {
+	     *         modelFn: Model.controlled.underDamped,
+	     *             // A function that models the desired behavior.
+	     *             // You can find useful functions inside
+	     *             // Model.controlled.* -OR- Model.uncontrolled.*
+	     *             // the function f should be of type: f(obj : o, dt: Num, t: Num) -> o,
+	     *             //   where o : { value: Num, velocity: Num, acceleration: Num, (Optional)endValue: Num }
+	     *             //     NOTE: f can modify obj in place and then return the modified version!
+	     *             // DEFAULT: if endValue specified: Model.controlled.criticallyDamped
+	     *             //          else Model.uncontrolled.friction
+	     *         endValue: 42,
+	     *             // If you use a function from Model.controlled.* specify the end value here,
+	     *             // else omit the property. Its either a number
+	     *             // -OR-
+	     *             // a function of type: (velocity: Num) -> Num
+	     *             //     This is useful if your end value depends on the previous velocity.
+	     *             // OPTIONAL
+	     *         endCondition(o) { return Math.abs(o.velocity) < 0.5; },
+	     *             // A function to indicate when to end the simulation.
+	     *             // This can for instance be useful if you want to go from an uncontrolled to a
+	     *             // controlled model when a certain condition is reached, for instance
+	     *             // for a scrolling list that snaps to a grid when below a certain velocity.
+	     *             // DEFAULT: for controlled:
+	     *             //                   |o.endValue-o.value| < 0.0001 && |o.velocity| < 0.0001
+	     *             //          for uncontrolled:
+	     *             //                   |o.velocity| < 0.0001 && |o.acceleration| < 0.0001
+	     *         onEnd: callback
+	     *             // A callback that gets called with true, when the simulation finished
+	     *             // or with false, when interrupted.
+	     *             // OPTIONAL
+	     *     }
+	     * }
+	     */
+	    simulateToHalt:function(newState) {
 	        for (var p in newState) {
 	            var config = newState[p];
+	            var anim = this.cancelAnimation(p);
+	            var velocity = (anim && anim.velocity) || 0;
+	            var acceleration = (anim && anim.acceleration) || 0;
+	            var endValue = config.endValue;
+	            var isControlled = typeof endValue !== 'undefined';
 
-	            var startValue = target.animationState[p];
-	            
-	            var canceledAnim = target.cancelAnimation(p);
-	            var velocity = canceledAnim && canceledAnim.velocity || 0;
-	            var simulationFn = config.simulationFn || Physical.criticalDamped;
-
-	            var endValue;
 	            if (typeof config.endValue === "function") {
 	                endValue = config.endValue(velocity);
 	            } else {
-	                endValue = config.endValue;
+	                endValue = config.endValue || 0;
 	            }
 
-	            // TODO: make sure all implementations expect velocity to be value/s
-	            var finalSimFn = simulationFn(startValue, endValue, velocity);
-
-	            var anim = {
-	                value: startValue,
-	                lastTime: startTime,
-	                velocity: velocity,
-	                finished: false,
-	                onEnd: config.onEnd,
-	                advance: Physical.advanceAnimation(startTime, endValue, finalSimFn)
-	            };
-	            startAnimation(anim, p, target);
+	            var modelFn = config.modelFn;
+	            if (isControlled) {
+	                modelFn = modelFn || Model.controlled.criticalDamped;
+	            } else {
+	                modelFn = modelFn || Model.uncontrolled.friction;
+	            }
+	            var endCondition = config.endCondition;
+	            if (isControlled) {
+	                endCondition = endCondition || Model.helpers.stopControlled;
+	            } else {
+	                endCondition = endCondition || Model.helpers.stopUncontrolled;
+	            }
+	            var onEnd = config.onEnd;
+	            startModelSimulation(this, p, this.animationState[p], endValue, velocity, acceleration, modelFn, endCondition, onEnd);
 	        }
 	    },
 
@@ -568,7 +755,10 @@
 	     * Best used with user input to give them maximum control over an animation.
 	     * Good candidates for using this are onMouseMove, onTouchMove, onScroll, etc...
 	     *
-	     * MAKE SURE YOU'VE USED startDirectUserInteraction BEFORE!
+	     * MAKE SURE YOU'VE USED startDirectUserInput BEFORE!
+	     *
+	     * A directUserInput animation can be stopped by
+	     * either starting another animation for the same prop or by using cancelAnimation
 	     *
 	     *  + Direct control to the user
 	     *  - Unphysical movement
@@ -579,10 +769,9 @@
 	     * }
 	     * 
 	     */
-	    directUserInput:function(newState, id) {
-	        var target = animationIds[id + this._rootNodeID] || this;
+	    directUserInput:function(newState) {
 	        for (var p in newState) {
-	            modifyDummyAnimation(target, p, newState[p]);
+	            modifyAnimationEndValue(this, p, newState[p]);
 	        }
 	    },
 	    /*
@@ -592,35 +781,138 @@
 	     *
 	     * Good candidates for using this are onMouseDown, onTouchDown, onScrollStart, etc...
 	     *
-	     * @newState: an object containing the starting state
+	     * @startState: an object containing the starting state.
 	     */
-	    startDirectUserInput:function(newState, id) {
-	        var target = animationIds[id + this._rootNodeID] || this;
-	        var startTime = window.performance.now();
-
-	        for (var p in newState) {
-	            target.cancelAnimation(p);
-	            startDummyAnimation(target, p, newState[p], startTime); 
+	    startDirectUserInput:function(startState) {
+	        for (var p in startState) {
+	            this.cancelAnimation(p);
+	            startDirectInputAnimation(this, p, startState[p]); 
 	        }
 	    },
-	    easeTo:function(newState, id) {
-	        var target = animationIds[id + this._rootNodeID] || this;
-	        var startTime = window.performance.now();
+
+	    /*
+	     * Use to set the animation state indirectly,
+	     * while giving you the benefit of offloading the rendering to the animation frame
+	     * and keeping track of the velocity for smooth transitions to a controlled animation.
+	     * 
+	     * Best used with user input to give them some control over an animation.
+	     * Good candidates for using this are onMouseMove, onTouchMove, onScroll, etc...
+	     *
+	     * MAKE SURE YOU'VE USED startIndirectUserInput BEFORE or
+	     * you're IN THE MIDDLE of a CONTROLLED simulateToHalt animation!
+	     *
+	     * An indirectUserInput animation can be stopped by
+	     * starting another animation for that prop or by using cancelAnimation
+	     *
+	     *  + Control to the user...
+	     *  - ... but not very accurate
+	     *  + physical movement
+	     *
+	     * @newState: an object like:
+	     * {
+	     *     x: e.clientX // The new value.
+	     * }
+	     * 
+	     */
+	    indirectUserInput:function(newState) {
+	        this.directUserInput(newState);
+	    },
+	    /*
+	     * Call this just before starting a series of indirectUserInput(..)s.
+	     *
+	     * Good candidates for using this are onMouseDown, onTouchDown, onScrollStart, etc...
+	     *
+	     * This is equivalent to starting a controlled simulateToHalt animation,
+	     * so if there is already one going on, you don't need to call this.
+	     *
+	     * @newState: refer to a controlled simulateToHalt()
+	     */
+	    startIndirectUserInput:function(newState) {
+	        this.simulateToHalt(newState);
+	        // for (var p in newState) {
+	        //     var config = newState[p];
+	        //     var anim = this.cancelAnimation(p);
+	        //     var velocity = (anim && anim.velocity) || 0;
+	        //     var acceleration = (anim && anim.acceleration) || 0;
+	        //     var endValue = config.value;
+	        //     var modelFn = config.modelFn || Model.criticalDamped;
+	        //     startModelSimulation(this, p, this.animationState[p], endValue, velocity, acceleration, modelFn);
+	        // }
+	    },
+
+	    /*
+	     * Automatically animate from the current animationState to the new state,
+	     * Using an easing function.
+	     *
+	     * You can also fade from one animation to an easing function using the fade property.
+	     * This will respect the previous velocity.
+	     *
+	     *  + Complete control
+	     *  - Tends to unphysical movements (even when using fade)
+	     * 
+	     * @newState: an Object with the fallowing properties:
+	     *  {
+	     *      x: {
+	     *          endValue: 42,
+	     *              // The end value of the property.
+	     *              // a number
+	     *              // -OR-
+	     *              // a function of type: (velocity: Num) -> Num
+	     *              //     This is useful if your end value depends on the previous velocity.
+	     *              // REQUIRED
+	     *          duration: 1.5,
+	     *              // The duration of the animation in seconds.
+	     *              // DEFAULT: 1
+	     *          easingFn(t) { return Math.pow(t, 3); },
+	     *              // An easing function f with type: f(t: Num [0-1]) -> Num
+	     *              //      where f(0) = 0 and f(1) = 1. f(0 < t < 1) is allowed to be out of the [0-1] range!
+	     *              // There are many useful functions available in Easing.* to pick from.
+	     *              // DEFAULT: Easing.cubicInOut
+	     *          fade: {
+	     *              // Fade from the previous motion to this new animation.
+	     *              // Use when interrupting another animation or when transitioning
+	     *              // from a user controlled motion to a new animation.
+	     *              // OMIT to immediately start the new animation.
+	     *              // use 'fade: {}' to use the default configuration.
+	     *              interpolationFn: Easing.expOut,
+	     *                  // How to fade from the previous animation to the new one.
+	     *                  // For best results, use an easeOut animation.
+	     *                  // DEFAULT: Easing.quadOut
+	     *              duration: 0.3,
+	     *                  // How long to fade from the old animation the the new one,
+	     *                  // as a percentage of the new animations duration.
+	     *                  // DEFAULT: 0.5
+	     *          },
+	     *          onEnd: callback
+	     *              // A callback that gets called with true, when the animation finished
+	     *              // or with false, when interrupted.
+	     *      }, ...
+	     *  }
+	     */
+	    easeTo:function(newState) {
+	        var startTime = nowInSeconds();
 
 	        for (var p in newState) {
 	            var newS = newState[p];
-	            var startValue = target.animationState[p];
-	            var endValue = newS.endValue;
-	            var newAnimDuration = newS.duration || 1000;
+	            var startValue = this.animationState[p];
 
-	            var canceledAnim = target.cancelAnimation(p);
-
-	            var fade = newS.fade;
+	            var canceledAnim = this.cancelAnimation(p);
 	            var velocity = (canceledAnim && canceledAnim.velocity) || 0;
+
+	            var endValue;
+	            if (typeof newS.endValue === "function") {
+	                endValue = newS.endValue(velocity);
+	            } else {
+	                endValue = newS.endValue;
+	            }
+
+	            var newAnimDuration = newS.duration || 1;
+
 
 	            var easingInput = newS.easingFn || Easing.cubicInOut;
 	            var tempEasing = EasingHelpers.ease(easingInput, startValue, endValue);
 
+	            var fade = newS.fade;
 	            var newEasingFn = tempEasing;
 	            if (fade) {
 	                var fadeDuration = fade.duration || 0.5;
@@ -628,7 +920,7 @@
 	                newEasingFn = function(t)  {
 	                    if (t < fadeDuration) {
 	                        var eased = easing(t/fadeDuration);
-	                        return (1 - eased) * (velocity/1000 * t * newAnimDuration + startValue) + eased * tempEasing(t);
+	                        return (1 - eased) * (velocity * t * newAnimDuration + startValue) + eased * tempEasing(t);
 	                    } else {
 	                        return tempEasing(t);
 	                    }
@@ -640,241 +932,14 @@
 	                finished: false,
 	                onEnd: newS.onEnd,
 	                velocity: velocity,
-	                lastTime: startTime,
-	                advance:function(oldAnim, now) {
-	                    var percentage = (now - startTime) / newAnimDuration;
-	                    if (percentage >= 1) {
-	                        percentage = 1;
-	                    }
-	                    var newValue = newEasingFn(percentage);
-	                    oldAnim.velocity = (newValue - oldAnim.value) / (now - oldAnim.lastTime) * 1000;
-	                    oldAnim.lastTime = now;
-	                    oldAnim.value = newValue;
-	                    if (percentage === 1) {
-	                        oldAnim.finished = true;
-	                    }
-	                    return oldAnim;
-	                }
+	                advance: EasingHelpers.advance(startTime, newAnimDuration, newEasingFn)
 	            };
-	            startAnimation(anim, p, target);
+	            startAnimation(anim, p, this);
 	        }
 	    },
 	    componentWillUnmount:function() {
 	        cancelAnimations(this, true);
 	    }
-
-	    /*
-	     * TODO: 
-	     *     Replace with directUserInput
-	     * 
-	     * Set the state of the animation directly.
-	     * Calling this will call performAnimation()
-	     * Useful when doing animations based on mouseMove or similar.
-	     * 
-	     * This will cancel all ongoing animations. (set trough animateToState(..))
-	     */
-	    // setAnimationState(newState, id) {
-	    //     var target = animationIds[id + this._rootNodeID] || this;
-	    //     for (var p in newState) {
-	    //         target.cancelAnimation(p);
-	    //         target.animationState[p] = newState[p];
-	    //     }
-	    //     target.performAnimation();
-	    // },
-
-	    // cancelAnimation(id) {
-	    //     var anim = this.__ongoingAnimations && this.__ongoingAnimations[id];
-	    //     if (anim) {
-	    //         if (anim.onEnded) {
-	    //             anim.onEnded();
-	    //         }
-	    //         delete this.__ongoingAnimations[id];
-	    //         return anim;
-	    //     }
-	    //     return undefined;
-	    // },
-
-	    /*
-	     * Automatically animate from the current animationState to the new state
-	     * 
-	     * @newState: an Object with fallowing properties:
-	     *  {
-	     *      prop1: {
-	     *          // The end value of the property. REQUIRED
-	     *          endValue: 42,
-	     *          // the duration of the animation in milliseconds.
-	     *          // DEFAULT: 1000
-	     *          duration: 1500,
-	     *          // An easing function f with type: f(t: Num [0-1]) -> Num
-	     *          //      where f(0) = 0 and f(1) = 1. f(0 < t < 1) is allowed to be out of the [0-1] range!
-	     *          // There are many useful functions available in Easing.* to pick from.
-	     *          //
-	     *          // -OR-
-	     *          //
-	     *          // A physical based function f of type: f(startPosition: Num, startVelocity: Num) -> (t: Num -> Num)
-	     *          //      where f(x0, v0)(0) = startPosition, f(x0, v0)(infinity) = 0, df(x0, v0)/dt(0) = startVelocity
-	     *          // If you choose a physical based function, the duration property will be ignored.
-	     *          // The animation stops when t: |f(x0, v0)(t)| < epsilon and |df(x0, v0)/dt(t)| < epsilon,
-	     *          //      for a very small epsilon.
-	     *          // Useful functions can be found in Physical.*
-	     *          //
-	     *          // -OR-
-	     *          //
-	     *          // A custom function f of type: f(startValue: a, endValue: a, t: Num [0-1]) -> a
-	     *          //      where f(x0, x1, 0) = x0, f(x0, x1, 1) = x1
-	     *          // This allows you to interpolate whatever property you want,
-	     *          // as long as you can provide an appropriate function.
-	     *          // Colors, strings, potatoes, you name it!
-	     *          //
-	     *          // DEFAULT: Easing.cubicInOut
-	     *          easing(t) {
-	     *              return Math.pow(t, 3);
-	     *          },
-	     *          onEnded: callback, // a callback that gets called when the animation finished or when interrupted.
-	     *          // Fade to this new animation. Use when interrupting another animation or
-	     *          // when transitioning from a user controlled motion to a new animation.
-	     *          // OMIT to immediately start the new animation.
-	     *          // use fade: {} to use the default configuration.
-	     *          fade: {
-	     *              easing: Easing.quadOut, // How to fade from the previous animation to the new one.
-	     *                                      // For best results, use an easeOut animation.
-	     *                                      // default: Easing.quadOut
-	     *              duration: 0.3,          // How long to fade from the old animation the the new one,
-	     *                                      // as a percentage of the new animations duration.
-	     *                                      // default: 0.5
-	     *              startingVelocity: 42    // You ONLY need to provide this if you're transitioning
-	     *                                      // from a user controlled motion to an animation.
-	     *                                      // Calculate with: (previousValue - currentValue)/deltaTimeInMS
-	     *                                      // OMIT when transitioning from an animation to an animation,
-	     *                                      // as this will be calculated automatically
-	     *          
-	     *          },
-	     *          startValue: 3 // Optionally overwrite the start value. OMIT to use the current animationState value.
-	     *                        // If you provide this value, it will jump to this value,
-	     *                        // so only provide it if this jump wouldn't be visible.
-	     *      },
-	     *      prop2: {
-	     *          // You can also use a complex object,
-	     *          // but then you have to specify a custom easing function.
-	     *          // This means you could even animate a string or whatever else you desire!
-	     *          endValue: { x: 2, y: 5},
-	     *          easing(start, end, t) {
-	     *              return {
-	     *                  x: EasingHelpers.ease(Easing.easeInCubic, start.x, end.x)(t),
-	     *                  y: start.y * (1-t) + end.y * t
-	     *              };
-	     *          }
-	     *      }
-	     *  }
-	     */
-	    // animateToState(newState, id) {
-	    //     var target = animationIds[id + this._rootNodeID] || this;
-	    //     target.__ongoingAnimations = target.__ongoingAnimations || {};
-	    //     for (var p in newState) {
-	    //         var newS = newState[p];
-	    //         var startValue = newS.startValue || target.animationState[p];
-	    //         var endValue = newS.endValue;
-	    //         var newAnimDuration = newS.duration || 1000;
-
-	    //         var canceledAnim = target.cancelAnimation(p);
-
-	    //         var fade = newS.fade;
-	    //         var velocity = fade && fade.startingVelocity;
-	    //         velocity = velocity || (canceledAnim && canceledAnim.velocity) || 0;
-
-	    //         var easingInput = newS.easing || Easing.cubicInOut;
-	    //         var tempEasing;
-	    //         if (easingInput.length === 1) { // Meaning we've got a function of type Num [0-1] -> Num
-	    //             tempEasing = EasingHelpers.ease(easingInput, startValue, endValue);
-	    //         } else if (easingInput.length === 2) { // Meaning we've got a physical function.
-	    //             var physicalFn = easingInput(startValue - endValue, velocity * 1000);
-	    //             tempEasing = (t) => physicalFn(t) + endValue;
-	    //         } else { // Meaning we've got a function of type (a, a, Number [0-1]) -> a
-	    //             tempEasing = easingInput;
-	    //         }
-
-	    //         var newEasingFn = tempEasing;
-	    //         if (easingInput.length === 1 && fade) {
-	    //             var duration = fade.duration || 0.5;
-	    //             var easing = fade.easing || Easing.quadOut;
-	    //             newEasingFn = (t) => {
-	    //                 if (t < duration) {
-	    //                     var eased = easing(t/duration);
-	    //                     return (1 - eased) * (velocity * t * newAnimDuration + startValue) + eased * tempEasing(t);
-	    //                 } else {
-	    //                     return tempEasing(t);
-	    //                 }
-	    //             };
-	    //         }
-
-	    //         var startTime = window.performance.now();
-
-	    //         var anim = {
-	    //             value: startValue,
-	    //             finished: false,
-	    //             onEnded: newS.onEnded
-	    //         };
-	    //         if (easingInput.length !== 2) {
-	    //             anim.velocity = velocity;
-	    //             anim.lastTime = startTime;
-	    //             anim.advance = (oldAnim, now) => {
-	    //                 var percentage = (now - startTime) / newAnimDuration;
-	    //                 if (percentage >= 1) {
-	    //                     percentage = 1;
-	    //                 }
-	    //                 var newValue = newEasingFn(percentage);
-	    //                 oldAnim.velocity = (newValue - oldAnim.value) / (now - oldAnim.lastTime);
-	    //                 oldAnim.lastTime = now;
-	    //                 oldAnim.value = newValue;
-	    //                 if (percentage === 1) {
-	    //                     oldAnim.finished = true;
-	    //                 }
-	    //                 return oldAnim;
-	    //             };
-	    //         } else {
-	    //             anim.velocity = velocity;
-	    //             anim.lastTime = startTime;
-	    //             anim.advance = (oldAnim, now) => {
-	    //                 var dt = now - startTime;
-	    //                 var newValue = newEasingFn(dt/1000);
-	    //                 oldAnim.velocity = (newValue - oldAnim.value) / (now - oldAnim.lastTime);
-	    //                 oldAnim.lastTime = now;
-	    //                 oldAnim.value = newValue;
-	    //                 if (Math.abs(oldAnim.velocity) <= 0.0001 && Math.abs(oldAnim.value - endValue) <= 0.0001) {
-	    //                     oldAnim.value = endValue;
-	    //                     oldAnim.finished = true;
-	    //                 }
-	    //                 return oldAnim;
-	    //             };
-	    //         }
-	    //         target.__ongoingAnimations[p] = anim;
-	    //     }
-	    //     if (!target.__animation) {
-	    //         target.__animation = window.requestAnimationFrame(target.doAnimations);
-	    //     }
-	    // },
-	    // doAnimations() {
-	    //     var finished = false;
-	    //     var now = window.performance.now();
-	    //     for (var p in this.__ongoingAnimations) {
-	    //         var anim = this.__ongoingAnimations[p];
-	    //         var newAnim = anim.advance(anim, now);
-	    //         this.__ongoingAnimations[p] = newAnim;
-	    //         this.animationState[p] = newAnim.value;
-	    //         if (newAnim.finished) {
-	    //             this.cancelAnimation(p);
-	    //             if (Object.keys(this.__ongoingAnimations).length === 0) {
-	    //                 finished = true;
-	    //             }
-	    //         }
-	    //     }
-	    //     this.performAnimation();
-	    //     if (!finished) {
-	    //         this.__animation = window.requestAnimationFrame(this.doAnimations);
-	    //     } else {
-	    //         this.__animation = undefined;
-	    //     }
-	    // }
 	};
 
 	module.exports = animationMixin;
@@ -885,79 +950,136 @@
 
 	"use strict";
 
+	var Model = {};
 
-	/*
-	 * This is a collection of nice easing functions
-	 *
-	 * The functions that start with 'make' are functions that
-	 * take a configuration parameters and return a new easing function.
-	 */
-	var Physical = {
-	    makeCriticallyDamped:function(frequency) {
-	        return function(startValue, endValue, startVelocity)  {
-	            var a = startValue - endValue,
-	                b = a * frequency + startVelocity;
-	                return function(t)  {return (a + b*t)*Math.exp(-frequency*t) + endValue;};
-	        };
+	Model.helpers = {
+	    /*
+	     * Used internally for animating
+	     */
+	    verletIntegration:function(obj, newA, dt) {
+	    	var x = obj.value;
+	    	var v = obj.velocity;
+	    	var a = obj.acceleration;
+	    	var halfV = v + 0.5*a*dt;
+	    	obj.value = x + halfV*dt;
+	    	obj.velocity = halfV + 0.5*newA*dt;
+	    	if (obj.endCondition(obj)) {
+	    		obj.finished = true;
+	    	}
+	    	return obj;
 	    },
-	    /* 1 < damping */
-	    makeOverDamped:function(frequency, damping) {
-	        return function(startValue, endValue, startVelocity)  {
-	            var temp = Math.sqrt(damping * damping - 1),
-	                y_1 = frequency * (temp - damping),
-	                y_2 = frequency * (-temp - damping),
-	                x0 = startValue - endValue,
-	                a = x0 + (y_1 * x0 - startVelocity)/(y_2 - y_1),
-	                b = -(y_1 * x0 - startVelocity)/(y_2 - y_1);
-	            return function(t)  {return a * Math.exp(y_1 * t) + b*Math.exp(y_2 * t) + endValue;};
-	        };
+	    // TODO!!!
+	    constrain:function(simulation, constraints) {
+	    	return function(obj, dt, t)  {
+	    		// TODO: Integrate first, then check if the constraint is
+	    		// fulfilled, if not, solve the problem with the solver.
+	    		// So a constraint could be: (x) => x>ground
+	    		// A solver could be: (x1, v1) => (x2=ground+c*(ground-x1), v2=-c*v1)
+	    		var o = simulation(obj, dt, t);
+	    		for (var i = 0, l = constraints.length; i < l; i++) {
+	    			var cont = constraints[i];
+	    			if (cont.restrict(o)) {
+	    				cont.resolve(o);
+	    			}
+	    		}
+	    	};
 	    },
-	    /* 0 < damping < 1 */
-	    makeUnderDamped:function(frequency, damping) {
-	        return function(startValue, endValue, startVelocity)  {
-	            var w_d = frequency * Math.sqrt(1 - damping * damping),
-	                a = startValue - endValue,
-	                b = 1/w_d*(damping * frequency * a + startVelocity);
-	            return function(t)  {return Math.exp(-damping * frequency * t)*(a*Math.cos(w_d * t) + b*Math.sin(w_d * t)) + endValue;};
-	        };
+	    stopControlled:function(o) {
+	    	var cond = Math.abs(o.endValue-o.value) < 0.0001 && Math.abs(o.velocity) < 0.0001;
+	    	if (cond) {
+	    		// Make sure the end value is exactly endValue
+	    		o.value = o.endValue;
+	    	}
+	    	return cond;
+	    },
+	    stopUncontrolled:function(o) {
+	    	return Math.abs(o.velocity) < 0.0001 && Math.abs(o.acceleration) < 0.0001;
 	    }
 	};
 
-	/* 0 < damping */
-	Physical.makeDampedHarmonicOscillator = function(frequency, damping)  {
-	    if (damping < 1) {
-	        return Physical.makeUnderDamped(frequency, damping);
-	    } else if (damping === 1) {
-	        return Physical.makeCriticallyDamped(frequency);
-	    } else {
-	        return Physical.makeOverDamped(frequency, damping);
+	Model.forces = {
+		/* a simple friction force */
+		friction:function(frictionCoefficient) {
+			return function(v)  {
+				if (v > 0) {
+					return -frictionCoefficient;
+				} else if (v < 0) {
+					return frictionCoefficient;
+				} return 0;
+			};
+		},
+		gravity:function(g) {
+			return -g;
+		},
+		/* Drag equation with a high Reynolds number */
+		fluidDrag:function(dragConstant) {
+			return function(v)  {return -dragConstant*v*v;};
+		},
+		/* Drag equation with a low Reynolds number */
+		airDrag:function(dragConstant) {
+			return function(v)  {return -dragConstant*v;};
+		},
+		spring:function(springConstant) {
+			return function(xEnd, x)  {
+				return (xEnd - x) * springConstant;
+			};
+		},
+		damper:function(damperConstant) {
+			return function(v)  {return -damperConstant*v;};
+		}
+	};
+
+	// ### Controlled ###
+	Model.controlled = {};
+	Model.controlled.make = {
+		massSpringDamper:function(mass, springConstant, damperConstant) {
+			var fd = Model.forces.damper(damperConstant);
+			var fs = Model.forces.spring(springConstant);
+			return function(obj, dt, t)  {
+				return Model.helpers.verletIntegration(obj, (fs(obj.endValue, obj.value)+fd(obj.velocity))/mass, dt);
+			};
 	    }
 	};
-	Physical.makeMassSpringDamper = function(mass, springConstant, damperConstant)  {
-	    return Physical.makeDampedHarmonicOscillator(Math.sqrt(springConstant/mass), damperConstant/(2*Math.sqrt(mass*springConstant)));
+	Model.controlled.make.dampedHarmonicOscillator = function(frequency, damping)  {
+		return Model.controlled.make.massSpringDamper(1, frequency*frequency, 2*frequency*damping);
 	};
-
-	Physical.underDamped = Physical.makeDampedHarmonicOscillator(10, 0.3);
-	Physical.criticalDamped = Physical.makeDampedHarmonicOscillator(10, 1);
-	Physical.overDamped = Physical.makeDampedHarmonicOscillator(10, 1.5);
-
-	Physical.advanceAnimation = function(startTime, endValue, fn)  {
-	    return function(oldAnim, now)  {
-	        var dt = now - startTime;
-	        // We scale by 1000 here because our function takes s and not ms.
-	        var newValue = fn(dt/1000);
-	        oldAnim.velocity = (newValue - oldAnim.value) / (now - oldAnim.lastTime) * 1000;
-	        oldAnim.lastTime = now;
-	        oldAnim.value = newValue;
-	        if (Math.abs(oldAnim.velocity) <= 0.0001 && Math.abs(oldAnim.value - endValue) <= 0.0001) {
-	            oldAnim.value = endValue;
-	            oldAnim.finished = true;
-	        }
-	        return oldAnim;
-	    };
+	Model.controlled.make.criticallyDamped = function(frequency)  {
+		return Model.controlled.make.dampedHarmonicOscillator(1, frequency);
 	};
+	Model.controlled.make.damper = function(mass, damping)  {
+		return Model.controlled.make.massSpringDamper(mass, 0, damping);
+	};
+	Model.controlled.underDamped = Model.controlled.make.dampedHarmonicOscillator(20, 0.7);
+	Model.controlled.overDamped = Model.controlled.make.dampedHarmonicOscillator(20, 1.3);
+	Model.controlled.criticallyDamped = Model.controlled.make.criticallyDamped(20);
 
-	module.exports = Physical;
+
+	// ### Uncontrolled ###
+	Model.uncontrolled = {};
+	Model.uncontrolled.make = {
+		gravity:function(g) {
+			var g_ = Model.forces.gravity(g);
+			return function(obj, dt, t)  {
+				return Model.helpers.verletIntegration(obj, g_, dt);
+			};
+		},
+		slide:function(friction) {
+			var f = Model.forces.friction(friction);
+			return function(obj, dt, t)  {
+				return Model.helpers.verletIntegration(obj, f, dt);
+			};
+		},
+		slidePhysical:function(mass, g, friction) {
+			var f = Model.forces.friction(g*mass*friction);
+			return function(obj, dt, t)  {
+				return Model.helpers.verletIntegration(obj, f, dt);
+			};
+		}
+	};
+	// Model.gravity = 
+	Model.uncontrolled.slide = Model.uncontrolled.make.slide(10);
+
+	module.exports = Model;
 
 /***/ },
 /* 6 */
@@ -1111,30 +1233,30 @@
 
 	"use strict";
 
-	var DOMPropertyOperations = __webpack_require__(24);
-	var EventPluginUtils = __webpack_require__(25);
-	var ReactChildren = __webpack_require__(26);
-	var ReactComponent = __webpack_require__(27);
-	var ReactCompositeComponent = __webpack_require__(28);
-	var ReactContext = __webpack_require__(29);
-	var ReactCurrentOwner = __webpack_require__(30);
-	var ReactElement = __webpack_require__(31);
-	var ReactElementValidator = __webpack_require__(32);
-	var ReactDOM = __webpack_require__(33);
-	var ReactDOMComponent = __webpack_require__(34);
-	var ReactDefaultInjection = __webpack_require__(35);
-	var ReactInstanceHandles = __webpack_require__(36);
-	var ReactLegacyElement = __webpack_require__(37);
-	var ReactMount = __webpack_require__(38);
-	var ReactMultiChild = __webpack_require__(39);
-	var ReactPerf = __webpack_require__(40);
-	var ReactPropTypes = __webpack_require__(41);
-	var ReactServerRendering = __webpack_require__(42);
-	var ReactTextComponent = __webpack_require__(43);
+	var DOMPropertyOperations = __webpack_require__(22);
+	var EventPluginUtils = __webpack_require__(23);
+	var ReactChildren = __webpack_require__(24);
+	var ReactComponent = __webpack_require__(25);
+	var ReactCompositeComponent = __webpack_require__(26);
+	var ReactContext = __webpack_require__(27);
+	var ReactCurrentOwner = __webpack_require__(28);
+	var ReactElement = __webpack_require__(29);
+	var ReactElementValidator = __webpack_require__(30);
+	var ReactDOM = __webpack_require__(31);
+	var ReactDOMComponent = __webpack_require__(32);
+	var ReactDefaultInjection = __webpack_require__(33);
+	var ReactInstanceHandles = __webpack_require__(34);
+	var ReactLegacyElement = __webpack_require__(35);
+	var ReactMount = __webpack_require__(36);
+	var ReactMultiChild = __webpack_require__(37);
+	var ReactPerf = __webpack_require__(38);
+	var ReactPropTypes = __webpack_require__(39);
+	var ReactServerRendering = __webpack_require__(40);
+	var ReactTextComponent = __webpack_require__(41);
 
-	var assign = __webpack_require__(22);
-	var deprecated = __webpack_require__(44);
-	var onlyChild = __webpack_require__(45);
+	var assign = __webpack_require__(42);
+	var deprecated = __webpack_require__(43);
+	var onlyChild = __webpack_require__(44);
 
 	ReactDefaultInjection.inject();
 
@@ -1233,7 +1355,7 @@
 	}
 
 	if ("production" !== process.env.NODE_ENV) {
-	  var ExecutionEnvironment = __webpack_require__(46);
+	  var ExecutionEnvironment = __webpack_require__(45);
 	  if (ExecutionEnvironment.canUseDOM && window.top === window.self) {
 
 	    // If we're in Chrome, look for the devtools marker and provide a download
@@ -1302,7 +1424,7 @@
 
 	"use strict";
 
-	var shallowEqual = __webpack_require__(52);
+	var shallowEqual = __webpack_require__(46);
 
 	/**
 	 * If your React component's render function is "pure", e.g. it will render the
@@ -1358,13 +1480,13 @@
 
 	var React = __webpack_require__(9);
 
-	var assign = __webpack_require__(22);
+	var assign = __webpack_require__(42);
 
 	var ReactTransitionGroup = React.createFactory(
 	  __webpack_require__(12)
 	);
 	var ReactCSSTransitionGroupChild = React.createFactory(
-	  __webpack_require__(23)
+	  __webpack_require__(47)
 	);
 
 	var ReactCSSTransitionGroup = React.createClass({
@@ -1427,11 +1549,11 @@
 	"use strict";
 
 	var React = __webpack_require__(9);
-	var ReactTransitionChildMapping = __webpack_require__(53);
+	var ReactTransitionChildMapping = __webpack_require__(48);
 
-	var assign = __webpack_require__(22);
+	var assign = __webpack_require__(42);
 	var cloneWithProps = __webpack_require__(15);
-	var emptyFunction = __webpack_require__(54);
+	var emptyFunction = __webpack_require__(49);
 
 	var ReactTransitionGroup = React.createClass({
 	  displayName: 'ReactTransitionGroup',
@@ -1619,15 +1741,15 @@
 
 	"use strict";
 
-	var CallbackQueue = __webpack_require__(47);
-	var PooledClass = __webpack_require__(48);
-	var ReactCurrentOwner = __webpack_require__(30);
-	var ReactPerf = __webpack_require__(40);
-	var Transaction = __webpack_require__(49);
+	var CallbackQueue = __webpack_require__(50);
+	var PooledClass = __webpack_require__(51);
+	var ReactCurrentOwner = __webpack_require__(28);
+	var ReactPerf = __webpack_require__(38);
+	var Transaction = __webpack_require__(52);
 
-	var assign = __webpack_require__(22);
-	var invariant = __webpack_require__(50);
-	var warning = __webpack_require__(51);
+	var assign = __webpack_require__(42);
+	var invariant = __webpack_require__(53);
+	var warning = __webpack_require__(54);
 
 	var dirtyComponents = [];
 	var asapCallbackQueue = CallbackQueue.getPooled();
@@ -1956,11 +2078,11 @@
 
 	"use strict";
 
-	var ReactElement = __webpack_require__(31);
+	var ReactElement = __webpack_require__(29);
 	var ReactPropTransferer = __webpack_require__(55);
 
 	var keyOf = __webpack_require__(56);
-	var warning = __webpack_require__(51);
+	var warning = __webpack_require__(54);
 
 	var CHILDREN_PROP = keyOf({children: null});
 
@@ -2017,9 +2139,9 @@
 
 	"use strict";
 
-	var assign = __webpack_require__(22);
+	var assign = __webpack_require__(42);
 	var keyOf = __webpack_require__(56);
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	function shallowCopy(x) {
 	  if (Array.isArray(x)) {
@@ -2191,8 +2313,8 @@
 
 	var DOMProperty = __webpack_require__(57);
 	var ReactDefaultPerfAnalysis = __webpack_require__(58);
-	var ReactMount = __webpack_require__(38);
-	var ReactPerf = __webpack_require__(40);
+	var ReactMount = __webpack_require__(36);
+	var ReactPerf = __webpack_require__(38);
 
 	var performanceNow = __webpack_require__(59);
 
@@ -2456,14 +2578,14 @@
 	var EventPluginHub = __webpack_require__(61);
 	var EventPropagators = __webpack_require__(62);
 	var React = __webpack_require__(9);
-	var ReactElement = __webpack_require__(31);
+	var ReactElement = __webpack_require__(29);
 	var ReactBrowserEventEmitter = __webpack_require__(63);
-	var ReactMount = __webpack_require__(38);
-	var ReactTextComponent = __webpack_require__(43);
+	var ReactMount = __webpack_require__(36);
+	var ReactTextComponent = __webpack_require__(41);
 	var ReactUpdates = __webpack_require__(13);
 	var SyntheticEvent = __webpack_require__(64);
 
-	var assign = __webpack_require__(22);
+	var assign = __webpack_require__(42);
 
 	var topLevelTypes = EventConstants.topLevelTypes;
 
@@ -3134,195 +3256,6 @@
 /* 22 */
 /***/ function(module, exports, __webpack_require__) {
 
-	/**
-	 * Copyright 2014, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 * @providesModule Object.assign
-	 */
-
-	// https://people.mozilla.org/~jorendorff/es6-draft.html#sec-object.assign
-
-	function assign(target, sources) {
-	  if (target == null) {
-	    throw new TypeError('Object.assign target cannot be null or undefined');
-	  }
-
-	  var to = Object(target);
-	  var hasOwnProperty = Object.prototype.hasOwnProperty;
-
-	  for (var nextIndex = 1; nextIndex < arguments.length; nextIndex++) {
-	    var nextSource = arguments[nextIndex];
-	    if (nextSource == null) {
-	      continue;
-	    }
-
-	    var from = Object(nextSource);
-
-	    // We don't currently support accessors nor proxies. Therefore this
-	    // copy cannot throw. If we ever supported this then we must handle
-	    // exceptions and side-effects. We don't support symbols so they won't
-	    // be transferred.
-
-	    for (var key in from) {
-	      if (hasOwnProperty.call(from, key)) {
-	        to[key] = from[key];
-	      }
-	    }
-	  }
-
-	  return to;
-	};
-
-	module.exports = assign;
-
-
-/***/ },
-/* 23 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/* WEBPACK VAR INJECTION */(function(process) {/**
-	 * Copyright 2013-2014, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 * @typechecks
-	 * @providesModule ReactCSSTransitionGroupChild
-	 */
-
-	"use strict";
-
-	var React = __webpack_require__(9);
-
-	var CSSCore = __webpack_require__(70);
-	var ReactTransitionEvents = __webpack_require__(71);
-
-	var onlyChild = __webpack_require__(45);
-
-	// We don't remove the element from the DOM until we receive an animationend or
-	// transitionend event. If the user screws up and forgets to add an animation
-	// their node will be stuck in the DOM forever, so we detect if an animation
-	// does not start and if it doesn't, we just call the end listener immediately.
-	var TICK = 17;
-	var NO_EVENT_TIMEOUT = 5000;
-
-	var noEventListener = null;
-
-
-	if ("production" !== process.env.NODE_ENV) {
-	  noEventListener = function() {
-	    console.warn(
-	      'transition(): tried to perform an animation without ' +
-	      'an animationend or transitionend event after timeout (' +
-	      NO_EVENT_TIMEOUT + 'ms). You should either disable this ' +
-	      'transition in JS or add a CSS animation/transition.'
-	    );
-	  };
-	}
-
-	var ReactCSSTransitionGroupChild = React.createClass({
-	  displayName: 'ReactCSSTransitionGroupChild',
-
-	  transition: function(animationType, finishCallback) {
-	    var node = this.getDOMNode();
-	    var className = this.props.name + '-' + animationType;
-	    var activeClassName = className + '-active';
-	    var noEventTimeout = null;
-
-	    var endListener = function(e) {
-	      if (e && e.target !== node) {
-	        return;
-	      }
-	      if ("production" !== process.env.NODE_ENV) {
-	        clearTimeout(noEventTimeout);
-	      }
-
-	      CSSCore.removeClass(node, className);
-	      CSSCore.removeClass(node, activeClassName);
-
-	      ReactTransitionEvents.removeEndEventListener(node, endListener);
-
-	      // Usually this optional callback is used for informing an owner of
-	      // a leave animation and telling it to remove the child.
-	      finishCallback && finishCallback();
-	    };
-
-	    ReactTransitionEvents.addEndEventListener(node, endListener);
-
-	    CSSCore.addClass(node, className);
-
-	    // Need to do this to actually trigger a transition.
-	    this.queueClass(activeClassName);
-
-	    if ("production" !== process.env.NODE_ENV) {
-	      noEventTimeout = setTimeout(noEventListener, NO_EVENT_TIMEOUT);
-	    }
-	  },
-
-	  queueClass: function(className) {
-	    this.classNameQueue.push(className);
-
-	    if (!this.timeout) {
-	      this.timeout = setTimeout(this.flushClassNameQueue, TICK);
-	    }
-	  },
-
-	  flushClassNameQueue: function() {
-	    if (this.isMounted()) {
-	      this.classNameQueue.forEach(
-	        CSSCore.addClass.bind(CSSCore, this.getDOMNode())
-	      );
-	    }
-	    this.classNameQueue.length = 0;
-	    this.timeout = null;
-	  },
-
-	  componentWillMount: function() {
-	    this.classNameQueue = [];
-	  },
-
-	  componentWillUnmount: function() {
-	    if (this.timeout) {
-	      clearTimeout(this.timeout);
-	    }
-	  },
-
-	  componentWillEnter: function(done) {
-	    if (this.props.enter) {
-	      this.transition('enter', done);
-	    } else {
-	      done();
-	    }
-	  },
-
-	  componentWillLeave: function(done) {
-	    if (this.props.leave) {
-	      this.transition('leave', done);
-	    } else {
-	      done();
-	    }
-	  },
-
-	  render: function() {
-	    return onlyChild(this.props.children);
-	  }
-	});
-
-	module.exports = ReactCSSTransitionGroupChild;
-	
-	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
-
-/***/ },
-/* 24 */
-/***/ function(module, exports, __webpack_require__) {
-
 	/* WEBPACK VAR INJECTION */(function(process) {/**
 	 * Copyright 2013-2014, Facebook, Inc.
 	 * All rights reserved.
@@ -3341,7 +3274,7 @@
 
 	var escapeTextForBrowser = __webpack_require__(65);
 	var memoizeStringOnly = __webpack_require__(66);
-	var warning = __webpack_require__(51);
+	var warning = __webpack_require__(54);
 
 	function shouldIgnoreValue(name, value) {
 	  return value == null ||
@@ -3520,7 +3453,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 25 */
+/* 23 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -3538,7 +3471,7 @@
 
 	var EventConstants = __webpack_require__(60);
 
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	/**
 	 * Injected dependencies:
@@ -3744,7 +3677,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 26 */
+/* 24 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -3760,10 +3693,10 @@
 
 	"use strict";
 
-	var PooledClass = __webpack_require__(48);
+	var PooledClass = __webpack_require__(51);
 
 	var traverseAllChildren = __webpack_require__(67);
-	var warning = __webpack_require__(51);
+	var warning = __webpack_require__(54);
 
 	var twoArgumentPooler = PooledClass.twoArgumentPooler;
 	var threeArgumentPooler = PooledClass.threeArgumentPooler;
@@ -3897,7 +3830,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 27 */
+/* 25 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -3913,12 +3846,12 @@
 
 	"use strict";
 
-	var ReactElement = __webpack_require__(31);
+	var ReactElement = __webpack_require__(29);
 	var ReactOwner = __webpack_require__(68);
 	var ReactUpdates = __webpack_require__(13);
 
-	var assign = __webpack_require__(22);
-	var invariant = __webpack_require__(50);
+	var assign = __webpack_require__(42);
+	var invariant = __webpack_require__(53);
 	var keyMirror = __webpack_require__(69);
 
 	/**
@@ -4343,7 +4276,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 28 */
+/* 26 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -4359,30 +4292,30 @@
 
 	"use strict";
 
-	var ReactComponent = __webpack_require__(27);
-	var ReactContext = __webpack_require__(29);
-	var ReactCurrentOwner = __webpack_require__(30);
-	var ReactElement = __webpack_require__(31);
-	var ReactElementValidator = __webpack_require__(32);
-	var ReactEmptyComponent = __webpack_require__(72);
-	var ReactErrorUtils = __webpack_require__(73);
-	var ReactLegacyElement = __webpack_require__(37);
+	var ReactComponent = __webpack_require__(25);
+	var ReactContext = __webpack_require__(27);
+	var ReactCurrentOwner = __webpack_require__(28);
+	var ReactElement = __webpack_require__(29);
+	var ReactElementValidator = __webpack_require__(30);
+	var ReactEmptyComponent = __webpack_require__(70);
+	var ReactErrorUtils = __webpack_require__(71);
+	var ReactLegacyElement = __webpack_require__(35);
 	var ReactOwner = __webpack_require__(68);
-	var ReactPerf = __webpack_require__(40);
+	var ReactPerf = __webpack_require__(38);
 	var ReactPropTransferer = __webpack_require__(55);
-	var ReactPropTypeLocations = __webpack_require__(74);
-	var ReactPropTypeLocationNames = __webpack_require__(75);
+	var ReactPropTypeLocations = __webpack_require__(72);
+	var ReactPropTypeLocationNames = __webpack_require__(73);
 	var ReactUpdates = __webpack_require__(13);
 
-	var assign = __webpack_require__(22);
-	var instantiateReactComponent = __webpack_require__(76);
-	var invariant = __webpack_require__(50);
+	var assign = __webpack_require__(42);
+	var instantiateReactComponent = __webpack_require__(74);
+	var invariant = __webpack_require__(53);
 	var keyMirror = __webpack_require__(69);
 	var keyOf = __webpack_require__(56);
-	var monitorCodeUse = __webpack_require__(77);
-	var mapObject = __webpack_require__(78);
-	var shouldUpdateReactComponent = __webpack_require__(79);
-	var warning = __webpack_require__(51);
+	var monitorCodeUse = __webpack_require__(75);
+	var mapObject = __webpack_require__(76);
+	var shouldUpdateReactComponent = __webpack_require__(77);
+	var warning = __webpack_require__(54);
 
 	var MIXINS_KEY = keyOf({mixins: null});
 
@@ -5786,7 +5719,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 29 */
+/* 27 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -5802,7 +5735,7 @@
 
 	"use strict";
 
-	var assign = __webpack_require__(22);
+	var assign = __webpack_require__(42);
 
 	/**
 	 * Keeps track of the current context.
@@ -5852,7 +5785,7 @@
 
 
 /***/ },
-/* 30 */
+/* 28 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -5890,7 +5823,7 @@
 
 
 /***/ },
-/* 31 */
+/* 29 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -5906,10 +5839,10 @@
 
 	"use strict";
 
-	var ReactContext = __webpack_require__(29);
-	var ReactCurrentOwner = __webpack_require__(30);
+	var ReactContext = __webpack_require__(27);
+	var ReactCurrentOwner = __webpack_require__(28);
 
-	var warning = __webpack_require__(51);
+	var warning = __webpack_require__(54);
 
 	var RESERVED_PROPS = {
 	  key: true,
@@ -6139,7 +6072,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 32 */
+/* 30 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -6162,12 +6095,12 @@
 
 	"use strict";
 
-	var ReactElement = __webpack_require__(31);
-	var ReactPropTypeLocations = __webpack_require__(74);
-	var ReactCurrentOwner = __webpack_require__(30);
+	var ReactElement = __webpack_require__(29);
+	var ReactPropTypeLocations = __webpack_require__(72);
+	var ReactCurrentOwner = __webpack_require__(28);
 
-	var monitorCodeUse = __webpack_require__(77);
-	var warning = __webpack_require__(51);
+	var monitorCodeUse = __webpack_require__(75);
+	var warning = __webpack_require__(54);
 
 	/**
 	 * Warn if there's no key explicitly set on dynamic arrays of children or
@@ -6424,7 +6357,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 33 */
+/* 31 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -6441,11 +6374,11 @@
 
 	"use strict";
 
-	var ReactElement = __webpack_require__(31);
-	var ReactElementValidator = __webpack_require__(32);
-	var ReactLegacyElement = __webpack_require__(37);
+	var ReactElement = __webpack_require__(29);
+	var ReactElementValidator = __webpack_require__(30);
+	var ReactLegacyElement = __webpack_require__(35);
 
-	var mapObject = __webpack_require__(78);
+	var mapObject = __webpack_require__(76);
 
 	/**
 	 * Create a factory that creates HTML tag elements.
@@ -6610,7 +6543,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 34 */
+/* 32 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -6627,22 +6560,22 @@
 
 	"use strict";
 
-	var CSSPropertyOperations = __webpack_require__(80);
+	var CSSPropertyOperations = __webpack_require__(78);
 	var DOMProperty = __webpack_require__(57);
-	var DOMPropertyOperations = __webpack_require__(24);
-	var ReactBrowserComponentMixin = __webpack_require__(81);
-	var ReactComponent = __webpack_require__(27);
+	var DOMPropertyOperations = __webpack_require__(22);
+	var ReactBrowserComponentMixin = __webpack_require__(79);
+	var ReactComponent = __webpack_require__(25);
 	var ReactBrowserEventEmitter = __webpack_require__(63);
-	var ReactMount = __webpack_require__(38);
-	var ReactMultiChild = __webpack_require__(39);
-	var ReactPerf = __webpack_require__(40);
+	var ReactMount = __webpack_require__(36);
+	var ReactMultiChild = __webpack_require__(37);
+	var ReactPerf = __webpack_require__(38);
 
-	var assign = __webpack_require__(22);
+	var assign = __webpack_require__(42);
 	var escapeTextForBrowser = __webpack_require__(65);
-	var invariant = __webpack_require__(50);
-	var isEventSupported = __webpack_require__(82);
+	var invariant = __webpack_require__(53);
+	var isEventSupported = __webpack_require__(80);
 	var keyOf = __webpack_require__(56);
-	var monitorCodeUse = __webpack_require__(77);
+	var monitorCodeUse = __webpack_require__(75);
 
 	var deleteListener = ReactBrowserEventEmitter.deleteListener;
 	var listenTo = ReactBrowserEventEmitter.listenTo;
@@ -7100,7 +7033,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 35 */
+/* 33 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -7116,37 +7049,37 @@
 
 	"use strict";
 
-	var BeforeInputEventPlugin = __webpack_require__(83);
-	var ChangeEventPlugin = __webpack_require__(84);
-	var ClientReactRootIndex = __webpack_require__(85);
-	var CompositionEventPlugin = __webpack_require__(86);
-	var DefaultEventPluginOrder = __webpack_require__(87);
-	var EnterLeaveEventPlugin = __webpack_require__(88);
-	var ExecutionEnvironment = __webpack_require__(46);
-	var HTMLDOMPropertyConfig = __webpack_require__(89);
-	var MobileSafariClickEventPlugin = __webpack_require__(90);
-	var ReactBrowserComponentMixin = __webpack_require__(81);
+	var BeforeInputEventPlugin = __webpack_require__(81);
+	var ChangeEventPlugin = __webpack_require__(82);
+	var ClientReactRootIndex = __webpack_require__(83);
+	var CompositionEventPlugin = __webpack_require__(84);
+	var DefaultEventPluginOrder = __webpack_require__(85);
+	var EnterLeaveEventPlugin = __webpack_require__(86);
+	var ExecutionEnvironment = __webpack_require__(45);
+	var HTMLDOMPropertyConfig = __webpack_require__(87);
+	var MobileSafariClickEventPlugin = __webpack_require__(88);
+	var ReactBrowserComponentMixin = __webpack_require__(79);
 	var ReactComponentBrowserEnvironment =
-	  __webpack_require__(91);
-	var ReactDefaultBatchingStrategy = __webpack_require__(92);
-	var ReactDOMComponent = __webpack_require__(34);
-	var ReactDOMButton = __webpack_require__(93);
-	var ReactDOMForm = __webpack_require__(94);
-	var ReactDOMImg = __webpack_require__(95);
-	var ReactDOMInput = __webpack_require__(96);
-	var ReactDOMOption = __webpack_require__(97);
-	var ReactDOMSelect = __webpack_require__(98);
-	var ReactDOMTextarea = __webpack_require__(99);
-	var ReactEventListener = __webpack_require__(100);
-	var ReactInjection = __webpack_require__(101);
-	var ReactInstanceHandles = __webpack_require__(36);
-	var ReactMount = __webpack_require__(38);
-	var SelectEventPlugin = __webpack_require__(102);
-	var ServerReactRootIndex = __webpack_require__(103);
-	var SimpleEventPlugin = __webpack_require__(104);
-	var SVGDOMPropertyConfig = __webpack_require__(105);
+	  __webpack_require__(89);
+	var ReactDefaultBatchingStrategy = __webpack_require__(90);
+	var ReactDOMComponent = __webpack_require__(32);
+	var ReactDOMButton = __webpack_require__(91);
+	var ReactDOMForm = __webpack_require__(92);
+	var ReactDOMImg = __webpack_require__(93);
+	var ReactDOMInput = __webpack_require__(94);
+	var ReactDOMOption = __webpack_require__(95);
+	var ReactDOMSelect = __webpack_require__(96);
+	var ReactDOMTextarea = __webpack_require__(97);
+	var ReactEventListener = __webpack_require__(98);
+	var ReactInjection = __webpack_require__(99);
+	var ReactInstanceHandles = __webpack_require__(34);
+	var ReactMount = __webpack_require__(36);
+	var SelectEventPlugin = __webpack_require__(100);
+	var ServerReactRootIndex = __webpack_require__(101);
+	var SimpleEventPlugin = __webpack_require__(102);
+	var SVGDOMPropertyConfig = __webpack_require__(103);
 
-	var createFullPageComponent = __webpack_require__(106);
+	var createFullPageComponent = __webpack_require__(104);
 
 	function inject() {
 	  ReactInjection.EventEmitter.injectReactEventListener(
@@ -7232,7 +7165,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 36 */
+/* 34 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -7249,9 +7182,9 @@
 
 	"use strict";
 
-	var ReactRootIndex = __webpack_require__(107);
+	var ReactRootIndex = __webpack_require__(105);
 
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	var SEPARATOR = '.';
 	var SEPARATOR_LENGTH = SEPARATOR.length;
@@ -7570,7 +7503,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 37 */
+/* 35 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -7586,11 +7519,11 @@
 
 	"use strict";
 
-	var ReactCurrentOwner = __webpack_require__(30);
+	var ReactCurrentOwner = __webpack_require__(28);
 
-	var invariant = __webpack_require__(50);
-	var monitorCodeUse = __webpack_require__(77);
-	var warning = __webpack_require__(51);
+	var invariant = __webpack_require__(53);
+	var monitorCodeUse = __webpack_require__(75);
+	var warning = __webpack_require__(54);
 
 	var legacyFactoryLogs = {};
 	function warnForLegacyFactoryCall() {
@@ -7820,7 +7753,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 38 */
+/* 36 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -7838,19 +7771,19 @@
 
 	var DOMProperty = __webpack_require__(57);
 	var ReactBrowserEventEmitter = __webpack_require__(63);
-	var ReactCurrentOwner = __webpack_require__(30);
-	var ReactElement = __webpack_require__(31);
-	var ReactLegacyElement = __webpack_require__(37);
-	var ReactInstanceHandles = __webpack_require__(36);
-	var ReactPerf = __webpack_require__(40);
+	var ReactCurrentOwner = __webpack_require__(28);
+	var ReactElement = __webpack_require__(29);
+	var ReactLegacyElement = __webpack_require__(35);
+	var ReactInstanceHandles = __webpack_require__(34);
+	var ReactPerf = __webpack_require__(38);
 
-	var containsNode = __webpack_require__(108);
-	var deprecated = __webpack_require__(44);
-	var getReactRootElementInContainer = __webpack_require__(109);
-	var instantiateReactComponent = __webpack_require__(76);
-	var invariant = __webpack_require__(50);
-	var shouldUpdateReactComponent = __webpack_require__(79);
-	var warning = __webpack_require__(51);
+	var containsNode = __webpack_require__(106);
+	var deprecated = __webpack_require__(43);
+	var getReactRootElementInContainer = __webpack_require__(107);
+	var instantiateReactComponent = __webpack_require__(74);
+	var invariant = __webpack_require__(53);
+	var shouldUpdateReactComponent = __webpack_require__(77);
+	var warning = __webpack_require__(54);
 
 	var createElement = ReactLegacyElement.wrapCreateElement(
 	  ReactElement.createElement
@@ -8521,7 +8454,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 39 */
+/* 37 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -8538,12 +8471,12 @@
 
 	"use strict";
 
-	var ReactComponent = __webpack_require__(27);
-	var ReactMultiChildUpdateTypes = __webpack_require__(112);
+	var ReactComponent = __webpack_require__(25);
+	var ReactMultiChildUpdateTypes = __webpack_require__(108);
 
-	var flattenChildren = __webpack_require__(113);
-	var instantiateReactComponent = __webpack_require__(76);
-	var shouldUpdateReactComponent = __webpack_require__(79);
+	var flattenChildren = __webpack_require__(109);
+	var instantiateReactComponent = __webpack_require__(74);
+	var shouldUpdateReactComponent = __webpack_require__(77);
 
 	/**
 	 * Updating children of a component may trigger recursive updates. The depth is
@@ -8953,7 +8886,7 @@
 
 
 /***/ },
-/* 40 */
+/* 38 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -9040,7 +8973,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 41 */
+/* 39 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -9056,11 +8989,11 @@
 
 	"use strict";
 
-	var ReactElement = __webpack_require__(31);
-	var ReactPropTypeLocationNames = __webpack_require__(75);
+	var ReactElement = __webpack_require__(29);
+	var ReactPropTypeLocationNames = __webpack_require__(73);
 
-	var deprecated = __webpack_require__(44);
-	var emptyFunction = __webpack_require__(54);
+	var deprecated = __webpack_require__(43);
+	var emptyFunction = __webpack_require__(49);
 
 	/**
 	 * Collection of methods that allow declaration and validation of props that are
@@ -9398,7 +9331,7 @@
 
 
 /***/ },
-/* 42 */
+/* 40 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -9414,14 +9347,14 @@
 	 */
 	"use strict";
 
-	var ReactElement = __webpack_require__(31);
-	var ReactInstanceHandles = __webpack_require__(36);
+	var ReactElement = __webpack_require__(29);
+	var ReactInstanceHandles = __webpack_require__(34);
 	var ReactMarkupChecksum = __webpack_require__(110);
 	var ReactServerRenderingTransaction =
 	  __webpack_require__(111);
 
-	var instantiateReactComponent = __webpack_require__(76);
-	var invariant = __webpack_require__(50);
+	var instantiateReactComponent = __webpack_require__(74);
+	var invariant = __webpack_require__(53);
 
 	/**
 	 * @param {ReactElement} element
@@ -9481,7 +9414,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 43 */
+/* 41 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -9498,11 +9431,11 @@
 
 	"use strict";
 
-	var DOMPropertyOperations = __webpack_require__(24);
-	var ReactComponent = __webpack_require__(27);
-	var ReactElement = __webpack_require__(31);
+	var DOMPropertyOperations = __webpack_require__(22);
+	var ReactComponent = __webpack_require__(25);
+	var ReactElement = __webpack_require__(29);
 
-	var assign = __webpack_require__(22);
+	var assign = __webpack_require__(42);
 	var escapeTextForBrowser = __webpack_require__(65);
 
 	/**
@@ -9591,7 +9524,58 @@
 
 
 /***/ },
-/* 44 */
+/* 42 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright 2014, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 * @providesModule Object.assign
+	 */
+
+	// https://people.mozilla.org/~jorendorff/es6-draft.html#sec-object.assign
+
+	function assign(target, sources) {
+	  if (target == null) {
+	    throw new TypeError('Object.assign target cannot be null or undefined');
+	  }
+
+	  var to = Object(target);
+	  var hasOwnProperty = Object.prototype.hasOwnProperty;
+
+	  for (var nextIndex = 1; nextIndex < arguments.length; nextIndex++) {
+	    var nextSource = arguments[nextIndex];
+	    if (nextSource == null) {
+	      continue;
+	    }
+
+	    var from = Object(nextSource);
+
+	    // We don't currently support accessors nor proxies. Therefore this
+	    // copy cannot throw. If we ever supported this then we must handle
+	    // exceptions and side-effects. We don't support symbols so they won't
+	    // be transferred.
+
+	    for (var key in from) {
+	      if (hasOwnProperty.call(from, key)) {
+	        to[key] = from[key];
+	      }
+	    }
+	  }
+
+	  return to;
+	};
+
+	module.exports = assign;
+
+
+/***/ },
+/* 43 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -9605,8 +9589,8 @@
 	 * @providesModule deprecated
 	 */
 
-	var assign = __webpack_require__(22);
-	var warning = __webpack_require__(51);
+	var assign = __webpack_require__(42);
+	var warning = __webpack_require__(54);
 
 	/**
 	 * This will log a single deprecation notice per function and forward the call
@@ -9645,7 +9629,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 45 */
+/* 44 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -9660,9 +9644,9 @@
 	 */
 	"use strict";
 
-	var ReactElement = __webpack_require__(31);
+	var ReactElement = __webpack_require__(29);
 
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	/**
 	 * Returns the first child in a collection of children and verifies that there
@@ -9688,7 +9672,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 46 */
+/* 45 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -9737,7 +9721,336 @@
 
 
 /***/ },
+/* 46 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright 2013-2014, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 * @providesModule shallowEqual
+	 */
+
+	"use strict";
+
+	/**
+	 * Performs equality by iterating through keys on an object and returning
+	 * false when any key has values which are not strictly equal between
+	 * objA and objB. Returns true when the values of all keys are strictly equal.
+	 *
+	 * @return {boolean}
+	 */
+	function shallowEqual(objA, objB) {
+	  if (objA === objB) {
+	    return true;
+	  }
+	  var key;
+	  // Test for A's keys different from B.
+	  for (key in objA) {
+	    if (objA.hasOwnProperty(key) &&
+	        (!objB.hasOwnProperty(key) || objA[key] !== objB[key])) {
+	      return false;
+	    }
+	  }
+	  // Test for B's keys missing from A.
+	  for (key in objB) {
+	    if (objB.hasOwnProperty(key) && !objA.hasOwnProperty(key)) {
+	      return false;
+	    }
+	  }
+	  return true;
+	}
+
+	module.exports = shallowEqual;
+
+
+/***/ },
 /* 47 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/* WEBPACK VAR INJECTION */(function(process) {/**
+	 * Copyright 2013-2014, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 * @typechecks
+	 * @providesModule ReactCSSTransitionGroupChild
+	 */
+
+	"use strict";
+
+	var React = __webpack_require__(9);
+
+	var CSSCore = __webpack_require__(112);
+	var ReactTransitionEvents = __webpack_require__(113);
+
+	var onlyChild = __webpack_require__(44);
+
+	// We don't remove the element from the DOM until we receive an animationend or
+	// transitionend event. If the user screws up and forgets to add an animation
+	// their node will be stuck in the DOM forever, so we detect if an animation
+	// does not start and if it doesn't, we just call the end listener immediately.
+	var TICK = 17;
+	var NO_EVENT_TIMEOUT = 5000;
+
+	var noEventListener = null;
+
+
+	if ("production" !== process.env.NODE_ENV) {
+	  noEventListener = function() {
+	    console.warn(
+	      'transition(): tried to perform an animation without ' +
+	      'an animationend or transitionend event after timeout (' +
+	      NO_EVENT_TIMEOUT + 'ms). You should either disable this ' +
+	      'transition in JS or add a CSS animation/transition.'
+	    );
+	  };
+	}
+
+	var ReactCSSTransitionGroupChild = React.createClass({
+	  displayName: 'ReactCSSTransitionGroupChild',
+
+	  transition: function(animationType, finishCallback) {
+	    var node = this.getDOMNode();
+	    var className = this.props.name + '-' + animationType;
+	    var activeClassName = className + '-active';
+	    var noEventTimeout = null;
+
+	    var endListener = function(e) {
+	      if (e && e.target !== node) {
+	        return;
+	      }
+	      if ("production" !== process.env.NODE_ENV) {
+	        clearTimeout(noEventTimeout);
+	      }
+
+	      CSSCore.removeClass(node, className);
+	      CSSCore.removeClass(node, activeClassName);
+
+	      ReactTransitionEvents.removeEndEventListener(node, endListener);
+
+	      // Usually this optional callback is used for informing an owner of
+	      // a leave animation and telling it to remove the child.
+	      finishCallback && finishCallback();
+	    };
+
+	    ReactTransitionEvents.addEndEventListener(node, endListener);
+
+	    CSSCore.addClass(node, className);
+
+	    // Need to do this to actually trigger a transition.
+	    this.queueClass(activeClassName);
+
+	    if ("production" !== process.env.NODE_ENV) {
+	      noEventTimeout = setTimeout(noEventListener, NO_EVENT_TIMEOUT);
+	    }
+	  },
+
+	  queueClass: function(className) {
+	    this.classNameQueue.push(className);
+
+	    if (!this.timeout) {
+	      this.timeout = setTimeout(this.flushClassNameQueue, TICK);
+	    }
+	  },
+
+	  flushClassNameQueue: function() {
+	    if (this.isMounted()) {
+	      this.classNameQueue.forEach(
+	        CSSCore.addClass.bind(CSSCore, this.getDOMNode())
+	      );
+	    }
+	    this.classNameQueue.length = 0;
+	    this.timeout = null;
+	  },
+
+	  componentWillMount: function() {
+	    this.classNameQueue = [];
+	  },
+
+	  componentWillUnmount: function() {
+	    if (this.timeout) {
+	      clearTimeout(this.timeout);
+	    }
+	  },
+
+	  componentWillEnter: function(done) {
+	    if (this.props.enter) {
+	      this.transition('enter', done);
+	    } else {
+	      done();
+	    }
+	  },
+
+	  componentWillLeave: function(done) {
+	    if (this.props.leave) {
+	      this.transition('leave', done);
+	    } else {
+	      done();
+	    }
+	  },
+
+	  render: function() {
+	    return onlyChild(this.props.children);
+	  }
+	});
+
+	module.exports = ReactCSSTransitionGroupChild;
+	
+	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
+
+/***/ },
+/* 48 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright 2013-2014, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 * @typechecks static-only
+	 * @providesModule ReactTransitionChildMapping
+	 */
+
+	"use strict";
+
+	var ReactChildren = __webpack_require__(24);
+
+	var ReactTransitionChildMapping = {
+	  /**
+	   * Given `this.props.children`, return an object mapping key to child. Just
+	   * simple syntactic sugar around ReactChildren.map().
+	   *
+	   * @param {*} children `this.props.children`
+	   * @return {object} Mapping of key to child
+	   */
+	  getChildMapping: function(children) {
+	    return ReactChildren.map(children, function(child) {
+	      return child;
+	    });
+	  },
+
+	  /**
+	   * When you're adding or removing children some may be added or removed in the
+	   * same render pass. We want to show *both* since we want to simultaneously
+	   * animate elements in and out. This function takes a previous set of keys
+	   * and a new set of keys and merges them with its best guess of the correct
+	   * ordering. In the future we may expose some of the utilities in
+	   * ReactMultiChild to make this easy, but for now React itself does not
+	   * directly have this concept of the union of prevChildren and nextChildren
+	   * so we implement it here.
+	   *
+	   * @param {object} prev prev children as returned from
+	   * `ReactTransitionChildMapping.getChildMapping()`.
+	   * @param {object} next next children as returned from
+	   * `ReactTransitionChildMapping.getChildMapping()`.
+	   * @return {object} a key set that contains all keys in `prev` and all keys
+	   * in `next` in a reasonable order.
+	   */
+	  mergeChildMappings: function(prev, next) {
+	    prev = prev || {};
+	    next = next || {};
+
+	    function getValueForKey(key) {
+	      if (next.hasOwnProperty(key)) {
+	        return next[key];
+	      } else {
+	        return prev[key];
+	      }
+	    }
+
+	    // For each key of `next`, the list of keys to insert before that key in
+	    // the combined list
+	    var nextKeysPending = {};
+
+	    var pendingKeys = [];
+	    for (var prevKey in prev) {
+	      if (next.hasOwnProperty(prevKey)) {
+	        if (pendingKeys.length) {
+	          nextKeysPending[prevKey] = pendingKeys;
+	          pendingKeys = [];
+	        }
+	      } else {
+	        pendingKeys.push(prevKey);
+	      }
+	    }
+
+	    var i;
+	    var childMapping = {};
+	    for (var nextKey in next) {
+	      if (nextKeysPending.hasOwnProperty(nextKey)) {
+	        for (i = 0; i < nextKeysPending[nextKey].length; i++) {
+	          var pendingNextKey = nextKeysPending[nextKey][i];
+	          childMapping[nextKeysPending[nextKey][i]] = getValueForKey(
+	            pendingNextKey
+	          );
+	        }
+	      }
+	      childMapping[nextKey] = getValueForKey(nextKey);
+	    }
+
+	    // Finally, add the keys which didn't appear before any key in `next`
+	    for (i = 0; i < pendingKeys.length; i++) {
+	      childMapping[pendingKeys[i]] = getValueForKey(pendingKeys[i]);
+	    }
+
+	    return childMapping;
+	  }
+	};
+
+	module.exports = ReactTransitionChildMapping;
+
+
+/***/ },
+/* 49 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright 2013-2014, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 * @providesModule emptyFunction
+	 */
+
+	function makeEmptyFunction(arg) {
+	  return function() {
+	    return arg;
+	  };
+	}
+
+	/**
+	 * This function accepts and discards inputs; it has no side effects. This is
+	 * primarily useful idiomatically for overridable function endpoints which
+	 * always need to be callable, since JS lacks a null-call idiom ala Cocoa.
+	 */
+	function emptyFunction() {}
+
+	emptyFunction.thatReturns = makeEmptyFunction;
+	emptyFunction.thatReturnsFalse = makeEmptyFunction(false);
+	emptyFunction.thatReturnsTrue = makeEmptyFunction(true);
+	emptyFunction.thatReturnsNull = makeEmptyFunction(null);
+	emptyFunction.thatReturnsThis = function() { return this; };
+	emptyFunction.thatReturnsArgument = function(arg) { return arg; };
+
+	module.exports = emptyFunction;
+
+
+/***/ },
+/* 50 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -9753,10 +10066,10 @@
 
 	"use strict";
 
-	var PooledClass = __webpack_require__(48);
+	var PooledClass = __webpack_require__(51);
 
-	var assign = __webpack_require__(22);
-	var invariant = __webpack_require__(50);
+	var assign = __webpack_require__(42);
+	var invariant = __webpack_require__(53);
 
 	/**
 	 * A specialized pseudo-event module to help keep track of components waiting to
@@ -9840,7 +10153,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 48 */
+/* 51 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -9856,7 +10169,7 @@
 
 	"use strict";
 
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	/**
 	 * Static poolers. Several custom versions for each potential number of
@@ -9959,7 +10272,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 49 */
+/* 52 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -9975,7 +10288,7 @@
 
 	"use strict";
 
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	/**
 	 * `Transaction` creates a black box that is able to wrap any method such that
@@ -10203,7 +10516,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 50 */
+/* 53 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -10263,7 +10576,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 51 */
+/* 54 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -10279,7 +10592,7 @@
 
 	"use strict";
 
-	var emptyFunction = __webpack_require__(54);
+	var emptyFunction = __webpack_require__(49);
 
 	/**
 	 * Similar to invariant but only logs a warning if the condition is not met.
@@ -10311,197 +10624,6 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 52 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/**
-	 * Copyright 2013-2014, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 * @providesModule shallowEqual
-	 */
-
-	"use strict";
-
-	/**
-	 * Performs equality by iterating through keys on an object and returning
-	 * false when any key has values which are not strictly equal between
-	 * objA and objB. Returns true when the values of all keys are strictly equal.
-	 *
-	 * @return {boolean}
-	 */
-	function shallowEqual(objA, objB) {
-	  if (objA === objB) {
-	    return true;
-	  }
-	  var key;
-	  // Test for A's keys different from B.
-	  for (key in objA) {
-	    if (objA.hasOwnProperty(key) &&
-	        (!objB.hasOwnProperty(key) || objA[key] !== objB[key])) {
-	      return false;
-	    }
-	  }
-	  // Test for B's keys missing from A.
-	  for (key in objB) {
-	    if (objB.hasOwnProperty(key) && !objA.hasOwnProperty(key)) {
-	      return false;
-	    }
-	  }
-	  return true;
-	}
-
-	module.exports = shallowEqual;
-
-
-/***/ },
-/* 53 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/**
-	 * Copyright 2013-2014, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 * @typechecks static-only
-	 * @providesModule ReactTransitionChildMapping
-	 */
-
-	"use strict";
-
-	var ReactChildren = __webpack_require__(26);
-
-	var ReactTransitionChildMapping = {
-	  /**
-	   * Given `this.props.children`, return an object mapping key to child. Just
-	   * simple syntactic sugar around ReactChildren.map().
-	   *
-	   * @param {*} children `this.props.children`
-	   * @return {object} Mapping of key to child
-	   */
-	  getChildMapping: function(children) {
-	    return ReactChildren.map(children, function(child) {
-	      return child;
-	    });
-	  },
-
-	  /**
-	   * When you're adding or removing children some may be added or removed in the
-	   * same render pass. We want to show *both* since we want to simultaneously
-	   * animate elements in and out. This function takes a previous set of keys
-	   * and a new set of keys and merges them with its best guess of the correct
-	   * ordering. In the future we may expose some of the utilities in
-	   * ReactMultiChild to make this easy, but for now React itself does not
-	   * directly have this concept of the union of prevChildren and nextChildren
-	   * so we implement it here.
-	   *
-	   * @param {object} prev prev children as returned from
-	   * `ReactTransitionChildMapping.getChildMapping()`.
-	   * @param {object} next next children as returned from
-	   * `ReactTransitionChildMapping.getChildMapping()`.
-	   * @return {object} a key set that contains all keys in `prev` and all keys
-	   * in `next` in a reasonable order.
-	   */
-	  mergeChildMappings: function(prev, next) {
-	    prev = prev || {};
-	    next = next || {};
-
-	    function getValueForKey(key) {
-	      if (next.hasOwnProperty(key)) {
-	        return next[key];
-	      } else {
-	        return prev[key];
-	      }
-	    }
-
-	    // For each key of `next`, the list of keys to insert before that key in
-	    // the combined list
-	    var nextKeysPending = {};
-
-	    var pendingKeys = [];
-	    for (var prevKey in prev) {
-	      if (next.hasOwnProperty(prevKey)) {
-	        if (pendingKeys.length) {
-	          nextKeysPending[prevKey] = pendingKeys;
-	          pendingKeys = [];
-	        }
-	      } else {
-	        pendingKeys.push(prevKey);
-	      }
-	    }
-
-	    var i;
-	    var childMapping = {};
-	    for (var nextKey in next) {
-	      if (nextKeysPending.hasOwnProperty(nextKey)) {
-	        for (i = 0; i < nextKeysPending[nextKey].length; i++) {
-	          var pendingNextKey = nextKeysPending[nextKey][i];
-	          childMapping[nextKeysPending[nextKey][i]] = getValueForKey(
-	            pendingNextKey
-	          );
-	        }
-	      }
-	      childMapping[nextKey] = getValueForKey(nextKey);
-	    }
-
-	    // Finally, add the keys which didn't appear before any key in `next`
-	    for (i = 0; i < pendingKeys.length; i++) {
-	      childMapping[pendingKeys[i]] = getValueForKey(pendingKeys[i]);
-	    }
-
-	    return childMapping;
-	  }
-	};
-
-	module.exports = ReactTransitionChildMapping;
-
-
-/***/ },
-/* 54 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/**
-	 * Copyright 2013-2014, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 * @providesModule emptyFunction
-	 */
-
-	function makeEmptyFunction(arg) {
-	  return function() {
-	    return arg;
-	  };
-	}
-
-	/**
-	 * This function accepts and discards inputs; it has no side effects. This is
-	 * primarily useful idiomatically for overridable function endpoints which
-	 * always need to be callable, since JS lacks a null-call idiom ala Cocoa.
-	 */
-	function emptyFunction() {}
-
-	emptyFunction.thatReturns = makeEmptyFunction;
-	emptyFunction.thatReturnsFalse = makeEmptyFunction(false);
-	emptyFunction.thatReturnsTrue = makeEmptyFunction(true);
-	emptyFunction.thatReturnsNull = makeEmptyFunction(null);
-	emptyFunction.thatReturnsThis = function() { return this; };
-	emptyFunction.thatReturnsArgument = function(arg) { return arg; };
-
-	module.exports = emptyFunction;
-
-
-/***/ },
 /* 55 */
 /***/ function(module, exports, __webpack_require__) {
 
@@ -10518,11 +10640,11 @@
 
 	"use strict";
 
-	var assign = __webpack_require__(22);
-	var emptyFunction = __webpack_require__(54);
-	var invariant = __webpack_require__(50);
+	var assign = __webpack_require__(42);
+	var emptyFunction = __webpack_require__(49);
+	var invariant = __webpack_require__(53);
 	var joinClasses = __webpack_require__(114);
-	var warning = __webpack_require__(51);
+	var warning = __webpack_require__(54);
 
 	var didWarn = false;
 
@@ -10731,7 +10853,7 @@
 
 	"use strict";
 
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	function checkMask(value, bitmask) {
 	  return (value & bitmask) === bitmask;
@@ -11028,7 +11150,7 @@
 	 * @providesModule ReactDefaultPerfAnalysis
 	 */
 
-	var assign = __webpack_require__(22);
+	var assign = __webpack_require__(42);
 
 	// Don't try to save users less than 1.2ms (a number I made up)
 	var DONT_CARE_THRESHOLD = 1.2;
@@ -11349,11 +11471,11 @@
 	"use strict";
 
 	var EventPluginRegistry = __webpack_require__(116);
-	var EventPluginUtils = __webpack_require__(25);
+	var EventPluginUtils = __webpack_require__(23);
 
 	var accumulateInto = __webpack_require__(117);
 	var forEachAccumulated = __webpack_require__(118);
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	/**
 	 * Internal store for event listeners
@@ -11779,8 +11901,8 @@
 	var ReactEventEmitterMixin = __webpack_require__(119);
 	var ViewportMetrics = __webpack_require__(120);
 
-	var assign = __webpack_require__(22);
-	var isEventSupported = __webpack_require__(82);
+	var assign = __webpack_require__(42);
+	var isEventSupported = __webpack_require__(80);
 
 	/**
 	 * Summary of `ReactBrowserEventEmitter` event handling:
@@ -12132,10 +12254,10 @@
 
 	"use strict";
 
-	var PooledClass = __webpack_require__(48);
+	var PooledClass = __webpack_require__(51);
 
-	var assign = __webpack_require__(22);
-	var emptyFunction = __webpack_require__(54);
+	var assign = __webpack_require__(42);
+	var emptyFunction = __webpack_require__(49);
 	var getEventTarget = __webpack_require__(121);
 
 	/**
@@ -12376,10 +12498,10 @@
 
 	"use strict";
 
-	var ReactElement = __webpack_require__(31);
-	var ReactInstanceHandles = __webpack_require__(36);
+	var ReactElement = __webpack_require__(29);
+	var ReactInstanceHandles = __webpack_require__(34);
 
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	var SEPARATOR = ReactInstanceHandles.SEPARATOR;
 	var SUBSEPARATOR = ':';
@@ -12563,7 +12685,7 @@
 	"use strict";
 
 	var emptyObject = __webpack_require__(122);
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	/**
 	 * ReactOwners are capable of storing references to owned components.
@@ -12722,7 +12844,7 @@
 
 	"use strict";
 
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	/**
 	 * Constructs an enumeration with keys equal to their value.
@@ -12767,236 +12889,6 @@
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
-	 * Copyright 2013-2014, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 * @providesModule CSSCore
-	 * @typechecks
-	 */
-
-	var invariant = __webpack_require__(50);
-
-	/**
-	 * The CSSCore module specifies the API (and implements most of the methods)
-	 * that should be used when dealing with the display of elements (via their
-	 * CSS classes and visibility on screen. It is an API focused on mutating the
-	 * display and not reading it as no logical state should be encoded in the
-	 * display of elements.
-	 */
-
-	var CSSCore = {
-
-	  /**
-	   * Adds the class passed in to the element if it doesn't already have it.
-	   *
-	   * @param {DOMElement} element the element to set the class on
-	   * @param {string} className the CSS className
-	   * @return {DOMElement} the element passed in
-	   */
-	  addClass: function(element, className) {
-	    ("production" !== process.env.NODE_ENV ? invariant(
-	      !/\s/.test(className),
-	      'CSSCore.addClass takes only a single class name. "%s" contains ' +
-	      'multiple classes.', className
-	    ) : invariant(!/\s/.test(className)));
-
-	    if (className) {
-	      if (element.classList) {
-	        element.classList.add(className);
-	      } else if (!CSSCore.hasClass(element, className)) {
-	        element.className = element.className + ' ' + className;
-	      }
-	    }
-	    return element;
-	  },
-
-	  /**
-	   * Removes the class passed in from the element
-	   *
-	   * @param {DOMElement} element the element to set the class on
-	   * @param {string} className the CSS className
-	   * @return {DOMElement} the element passed in
-	   */
-	  removeClass: function(element, className) {
-	    ("production" !== process.env.NODE_ENV ? invariant(
-	      !/\s/.test(className),
-	      'CSSCore.removeClass takes only a single class name. "%s" contains ' +
-	      'multiple classes.', className
-	    ) : invariant(!/\s/.test(className)));
-
-	    if (className) {
-	      if (element.classList) {
-	        element.classList.remove(className);
-	      } else if (CSSCore.hasClass(element, className)) {
-	        element.className = element.className
-	          .replace(new RegExp('(^|\\s)' + className + '(?:\\s|$)', 'g'), '$1')
-	          .replace(/\s+/g, ' ') // multiple spaces to one
-	          .replace(/^\s*|\s*$/g, ''); // trim the ends
-	      }
-	    }
-	    return element;
-	  },
-
-	  /**
-	   * Helper to add or remove a class from an element based on a condition.
-	   *
-	   * @param {DOMElement} element the element to set the class on
-	   * @param {string} className the CSS className
-	   * @param {*} bool condition to whether to add or remove the class
-	   * @return {DOMElement} the element passed in
-	   */
-	  conditionClass: function(element, className, bool) {
-	    return (bool ? CSSCore.addClass : CSSCore.removeClass)(element, className);
-	  },
-
-	  /**
-	   * Tests whether the element has the class specified.
-	   *
-	   * @param {DOMNode|DOMWindow} element the element to set the class on
-	   * @param {string} className the CSS className
-	   * @return {boolean} true if the element has the class, false if not
-	   */
-	  hasClass: function(element, className) {
-	    ("production" !== process.env.NODE_ENV ? invariant(
-	      !/\s/.test(className),
-	      'CSS.hasClass takes only a single class name.'
-	    ) : invariant(!/\s/.test(className)));
-	    if (element.classList) {
-	      return !!className && element.classList.contains(className);
-	    }
-	    return (' ' + element.className + ' ').indexOf(' ' + className + ' ') > -1;
-	  }
-
-	};
-
-	module.exports = CSSCore;
-	
-	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
-
-/***/ },
-/* 71 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/**
-	 * Copyright 2013-2014, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 * @providesModule ReactTransitionEvents
-	 */
-
-	"use strict";
-
-	var ExecutionEnvironment = __webpack_require__(46);
-
-	/**
-	 * EVENT_NAME_MAP is used to determine which event fired when a
-	 * transition/animation ends, based on the style property used to
-	 * define that event.
-	 */
-	var EVENT_NAME_MAP = {
-	  transitionend: {
-	    'transition': 'transitionend',
-	    'WebkitTransition': 'webkitTransitionEnd',
-	    'MozTransition': 'mozTransitionEnd',
-	    'OTransition': 'oTransitionEnd',
-	    'msTransition': 'MSTransitionEnd'
-	  },
-
-	  animationend: {
-	    'animation': 'animationend',
-	    'WebkitAnimation': 'webkitAnimationEnd',
-	    'MozAnimation': 'mozAnimationEnd',
-	    'OAnimation': 'oAnimationEnd',
-	    'msAnimation': 'MSAnimationEnd'
-	  }
-	};
-
-	var endEvents = [];
-
-	function detectEvents() {
-	  var testEl = document.createElement('div');
-	  var style = testEl.style;
-
-	  // On some platforms, in particular some releases of Android 4.x,
-	  // the un-prefixed "animation" and "transition" properties are defined on the
-	  // style object but the events that fire will still be prefixed, so we need
-	  // to check if the un-prefixed events are useable, and if not remove them
-	  // from the map
-	  if (!('AnimationEvent' in window)) {
-	    delete EVENT_NAME_MAP.animationend.animation;
-	  }
-
-	  if (!('TransitionEvent' in window)) {
-	    delete EVENT_NAME_MAP.transitionend.transition;
-	  }
-
-	  for (var baseEventName in EVENT_NAME_MAP) {
-	    var baseEvents = EVENT_NAME_MAP[baseEventName];
-	    for (var styleName in baseEvents) {
-	      if (styleName in style) {
-	        endEvents.push(baseEvents[styleName]);
-	        break;
-	      }
-	    }
-	  }
-	}
-
-	if (ExecutionEnvironment.canUseDOM) {
-	  detectEvents();
-	}
-
-	// We use the raw {add|remove}EventListener() call because EventListener
-	// does not know how to remove event listeners and we really should
-	// clean up. Also, these events are not triggered in older browsers
-	// so we should be A-OK here.
-
-	function addEventListener(node, eventName, eventListener) {
-	  node.addEventListener(eventName, eventListener, false);
-	}
-
-	function removeEventListener(node, eventName, eventListener) {
-	  node.removeEventListener(eventName, eventListener, false);
-	}
-
-	var ReactTransitionEvents = {
-	  addEndEventListener: function(node, eventListener) {
-	    if (endEvents.length === 0) {
-	      // If CSS transitions are not supported, trigger an "end animation"
-	      // event immediately.
-	      window.setTimeout(eventListener, 0);
-	      return;
-	    }
-	    endEvents.forEach(function(endEvent) {
-	      addEventListener(node, endEvent, eventListener);
-	    });
-	  },
-
-	  removeEndEventListener: function(node, eventListener) {
-	    if (endEvents.length === 0) {
-	      return;
-	    }
-	    endEvents.forEach(function(endEvent) {
-	      removeEventListener(node, endEvent, eventListener);
-	    });
-	  }
-	};
-
-	module.exports = ReactTransitionEvents;
-
-
-/***/ },
-/* 72 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/* WEBPACK VAR INJECTION */(function(process) {/**
 	 * Copyright 2014, Facebook, Inc.
 	 * All rights reserved.
 	 *
@@ -13009,9 +12901,9 @@
 
 	"use strict";
 
-	var ReactElement = __webpack_require__(31);
+	var ReactElement = __webpack_require__(29);
 
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	var component;
 	// This registry keeps track of the React IDs of the components that rendered to
@@ -13073,7 +12965,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 73 */
+/* 71 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -13109,7 +13001,7 @@
 
 
 /***/ },
-/* 74 */
+/* 72 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -13137,7 +13029,7 @@
 
 
 /***/ },
-/* 75 */
+/* 73 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -13168,7 +13060,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 76 */
+/* 74 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -13185,12 +13077,12 @@
 
 	"use strict";
 
-	var warning = __webpack_require__(51);
+	var warning = __webpack_require__(54);
 
-	var ReactElement = __webpack_require__(31);
-	var ReactLegacyElement = __webpack_require__(37);
+	var ReactElement = __webpack_require__(29);
+	var ReactLegacyElement = __webpack_require__(35);
 	var ReactNativeComponent = __webpack_require__(123);
-	var ReactEmptyComponent = __webpack_require__(72);
+	var ReactEmptyComponent = __webpack_require__(70);
 
 	/**
 	 * Given an `element` create an instance that will actually be mounted.
@@ -13285,7 +13177,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 77 */
+/* 75 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -13301,7 +13193,7 @@
 
 	"use strict";
 
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	/**
 	 * Provides open-source compatible instrumentation for monitoring certain API
@@ -13322,7 +13214,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 78 */
+/* 76 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -13379,7 +13271,7 @@
 
 
 /***/ },
-/* 79 */
+/* 77 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -13421,7 +13313,7 @@
 
 
 /***/ },
-/* 80 */
+/* 78 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -13439,13 +13331,13 @@
 	"use strict";
 
 	var CSSProperty = __webpack_require__(124);
-	var ExecutionEnvironment = __webpack_require__(46);
+	var ExecutionEnvironment = __webpack_require__(45);
 
 	var camelizeStyleName = __webpack_require__(125);
 	var dangerousStyleValue = __webpack_require__(126);
 	var hyphenateStyleName = __webpack_require__(127);
 	var memoizeStringOnly = __webpack_require__(66);
-	var warning = __webpack_require__(51);
+	var warning = __webpack_require__(54);
 
 	var processStyleName = memoizeStringOnly(function(styleName) {
 	  return hyphenateStyleName(styleName);
@@ -13559,7 +13451,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 81 */
+/* 79 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -13575,10 +13467,10 @@
 
 	"use strict";
 
-	var ReactEmptyComponent = __webpack_require__(72);
-	var ReactMount = __webpack_require__(38);
+	var ReactEmptyComponent = __webpack_require__(70);
+	var ReactMount = __webpack_require__(36);
 
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	var ReactBrowserComponentMixin = {
 	  /**
@@ -13605,7 +13497,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 82 */
+/* 80 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -13621,7 +13513,7 @@
 
 	"use strict";
 
-	var ExecutionEnvironment = __webpack_require__(46);
+	var ExecutionEnvironment = __webpack_require__(45);
 
 	var useHasFeature;
 	if (ExecutionEnvironment.canUseDOM) {
@@ -13674,7 +13566,7 @@
 
 
 /***/ },
-/* 83 */
+/* 81 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -13693,7 +13585,7 @@
 
 	var EventConstants = __webpack_require__(60);
 	var EventPropagators = __webpack_require__(62);
-	var ExecutionEnvironment = __webpack_require__(46);
+	var ExecutionEnvironment = __webpack_require__(45);
 	var SyntheticInputEvent = __webpack_require__(128);
 
 	var keyOf = __webpack_require__(56);
@@ -13900,7 +13792,7 @@
 
 
 /***/ },
-/* 84 */
+/* 82 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -13919,11 +13811,11 @@
 	var EventConstants = __webpack_require__(60);
 	var EventPluginHub = __webpack_require__(61);
 	var EventPropagators = __webpack_require__(62);
-	var ExecutionEnvironment = __webpack_require__(46);
+	var ExecutionEnvironment = __webpack_require__(45);
 	var ReactUpdates = __webpack_require__(13);
 	var SyntheticEvent = __webpack_require__(64);
 
-	var isEventSupported = __webpack_require__(82);
+	var isEventSupported = __webpack_require__(80);
 	var isTextInputElement = __webpack_require__(129);
 	var keyOf = __webpack_require__(56);
 
@@ -14286,7 +14178,7 @@
 
 
 /***/ },
-/* 85 */
+/* 83 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -14315,7 +14207,7 @@
 
 
 /***/ },
-/* 86 */
+/* 84 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -14334,11 +14226,11 @@
 
 	var EventConstants = __webpack_require__(60);
 	var EventPropagators = __webpack_require__(62);
-	var ExecutionEnvironment = __webpack_require__(46);
-	var ReactInputSelection = __webpack_require__(131);
-	var SyntheticCompositionEvent = __webpack_require__(132);
+	var ExecutionEnvironment = __webpack_require__(45);
+	var ReactInputSelection = __webpack_require__(130);
+	var SyntheticCompositionEvent = __webpack_require__(131);
 
-	var getTextContentAccessor = __webpack_require__(133);
+	var getTextContentAccessor = __webpack_require__(132);
 	var keyOf = __webpack_require__(56);
 
 	var END_KEYCODES = [9, 13, 27, 32]; // Tab, Return, Esc, Space
@@ -14578,7 +14470,7 @@
 
 
 /***/ },
-/* 87 */
+/* 85 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -14622,7 +14514,7 @@
 
 
 /***/ },
-/* 88 */
+/* 86 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -14641,9 +14533,9 @@
 
 	var EventConstants = __webpack_require__(60);
 	var EventPropagators = __webpack_require__(62);
-	var SyntheticMouseEvent = __webpack_require__(130);
+	var SyntheticMouseEvent = __webpack_require__(133);
 
-	var ReactMount = __webpack_require__(38);
+	var ReactMount = __webpack_require__(36);
 	var keyOf = __webpack_require__(56);
 
 	var topLevelTypes = EventConstants.topLevelTypes;
@@ -14766,7 +14658,7 @@
 
 
 /***/ },
-/* 89 */
+/* 87 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -14785,7 +14677,7 @@
 	"use strict";
 
 	var DOMProperty = __webpack_require__(57);
-	var ExecutionEnvironment = __webpack_require__(46);
+	var ExecutionEnvironment = __webpack_require__(45);
 
 	var MUST_USE_ATTRIBUTE = DOMProperty.injection.MUST_USE_ATTRIBUTE;
 	var MUST_USE_PROPERTY = DOMProperty.injection.MUST_USE_PROPERTY;
@@ -14962,7 +14854,7 @@
 
 
 /***/ },
-/* 90 */
+/* 88 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -14981,7 +14873,7 @@
 
 	var EventConstants = __webpack_require__(60);
 
-	var emptyFunction = __webpack_require__(54);
+	var emptyFunction = __webpack_require__(49);
 
 	var topLevelTypes = EventConstants.topLevelTypes;
 
@@ -15024,7 +14916,7 @@
 
 
 /***/ },
-/* 91 */
+/* 89 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -15044,12 +14936,12 @@
 
 	var ReactDOMIDOperations = __webpack_require__(134);
 	var ReactMarkupChecksum = __webpack_require__(110);
-	var ReactMount = __webpack_require__(38);
-	var ReactPerf = __webpack_require__(40);
+	var ReactMount = __webpack_require__(36);
+	var ReactPerf = __webpack_require__(38);
 	var ReactReconcileTransaction = __webpack_require__(135);
 
-	var getReactRootElementInContainer = __webpack_require__(109);
-	var invariant = __webpack_require__(50);
+	var getReactRootElementInContainer = __webpack_require__(107);
+	var invariant = __webpack_require__(53);
 	var setInnerHTML = __webpack_require__(136);
 
 
@@ -15149,7 +15041,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 92 */
+/* 90 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -15166,10 +15058,10 @@
 	"use strict";
 
 	var ReactUpdates = __webpack_require__(13);
-	var Transaction = __webpack_require__(49);
+	var Transaction = __webpack_require__(52);
 
-	var assign = __webpack_require__(22);
-	var emptyFunction = __webpack_require__(54);
+	var assign = __webpack_require__(42);
+	var emptyFunction = __webpack_require__(49);
 
 	var RESET_BATCHED_UPDATES = {
 	  initialize: emptyFunction,
@@ -15226,7 +15118,7 @@
 
 
 /***/ },
-/* 93 */
+/* 91 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -15243,10 +15135,10 @@
 	"use strict";
 
 	var AutoFocusMixin = __webpack_require__(137);
-	var ReactBrowserComponentMixin = __webpack_require__(81);
-	var ReactCompositeComponent = __webpack_require__(28);
-	var ReactElement = __webpack_require__(31);
-	var ReactDOM = __webpack_require__(33);
+	var ReactBrowserComponentMixin = __webpack_require__(79);
+	var ReactCompositeComponent = __webpack_require__(26);
+	var ReactElement = __webpack_require__(29);
+	var ReactDOM = __webpack_require__(31);
 
 	var keyMirror = __webpack_require__(69);
 
@@ -15295,7 +15187,7 @@
 
 
 /***/ },
-/* 94 */
+/* 92 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -15313,10 +15205,10 @@
 
 	var EventConstants = __webpack_require__(60);
 	var LocalEventTrapMixin = __webpack_require__(138);
-	var ReactBrowserComponentMixin = __webpack_require__(81);
-	var ReactCompositeComponent = __webpack_require__(28);
-	var ReactElement = __webpack_require__(31);
-	var ReactDOM = __webpack_require__(33);
+	var ReactBrowserComponentMixin = __webpack_require__(79);
+	var ReactCompositeComponent = __webpack_require__(26);
+	var ReactElement = __webpack_require__(29);
+	var ReactDOM = __webpack_require__(31);
 
 	// Store a reference to the <form> `ReactDOMComponent`. TODO: use string
 	var form = ReactElement.createFactory(ReactDOM.form.type);
@@ -15349,7 +15241,7 @@
 
 
 /***/ },
-/* 95 */
+/* 93 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -15367,10 +15259,10 @@
 
 	var EventConstants = __webpack_require__(60);
 	var LocalEventTrapMixin = __webpack_require__(138);
-	var ReactBrowserComponentMixin = __webpack_require__(81);
-	var ReactCompositeComponent = __webpack_require__(28);
-	var ReactElement = __webpack_require__(31);
-	var ReactDOM = __webpack_require__(33);
+	var ReactBrowserComponentMixin = __webpack_require__(79);
+	var ReactCompositeComponent = __webpack_require__(26);
+	var ReactElement = __webpack_require__(29);
+	var ReactDOM = __webpack_require__(31);
 
 	// Store a reference to the <img> `ReactDOMComponent`. TODO: use string
 	var img = ReactElement.createFactory(ReactDOM.img.type);
@@ -15401,7 +15293,7 @@
 
 
 /***/ },
-/* 96 */
+/* 94 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -15418,17 +15310,17 @@
 	"use strict";
 
 	var AutoFocusMixin = __webpack_require__(137);
-	var DOMPropertyOperations = __webpack_require__(24);
+	var DOMPropertyOperations = __webpack_require__(22);
 	var LinkedValueUtils = __webpack_require__(139);
-	var ReactBrowserComponentMixin = __webpack_require__(81);
-	var ReactCompositeComponent = __webpack_require__(28);
-	var ReactElement = __webpack_require__(31);
-	var ReactDOM = __webpack_require__(33);
-	var ReactMount = __webpack_require__(38);
+	var ReactBrowserComponentMixin = __webpack_require__(79);
+	var ReactCompositeComponent = __webpack_require__(26);
+	var ReactElement = __webpack_require__(29);
+	var ReactDOM = __webpack_require__(31);
+	var ReactMount = __webpack_require__(36);
 	var ReactUpdates = __webpack_require__(13);
 
-	var assign = __webpack_require__(22);
-	var invariant = __webpack_require__(50);
+	var assign = __webpack_require__(42);
+	var invariant = __webpack_require__(53);
 
 	// Store a reference to the <input> `ReactDOMComponent`. TODO: use string
 	var input = ReactElement.createFactory(ReactDOM.input.type);
@@ -15582,7 +15474,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 97 */
+/* 95 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -15598,12 +15490,12 @@
 
 	"use strict";
 
-	var ReactBrowserComponentMixin = __webpack_require__(81);
-	var ReactCompositeComponent = __webpack_require__(28);
-	var ReactElement = __webpack_require__(31);
-	var ReactDOM = __webpack_require__(33);
+	var ReactBrowserComponentMixin = __webpack_require__(79);
+	var ReactCompositeComponent = __webpack_require__(26);
+	var ReactElement = __webpack_require__(29);
+	var ReactDOM = __webpack_require__(31);
 
-	var warning = __webpack_require__(51);
+	var warning = __webpack_require__(54);
 
 	// Store a reference to the <option> `ReactDOMComponent`. TODO: use string
 	var option = ReactElement.createFactory(ReactDOM.option.type);
@@ -15638,7 +15530,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 98 */
+/* 96 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -15656,13 +15548,13 @@
 
 	var AutoFocusMixin = __webpack_require__(137);
 	var LinkedValueUtils = __webpack_require__(139);
-	var ReactBrowserComponentMixin = __webpack_require__(81);
-	var ReactCompositeComponent = __webpack_require__(28);
-	var ReactElement = __webpack_require__(31);
-	var ReactDOM = __webpack_require__(33);
+	var ReactBrowserComponentMixin = __webpack_require__(79);
+	var ReactCompositeComponent = __webpack_require__(26);
+	var ReactElement = __webpack_require__(29);
+	var ReactDOM = __webpack_require__(31);
 	var ReactUpdates = __webpack_require__(13);
 
-	var assign = __webpack_require__(22);
+	var assign = __webpack_require__(42);
 
 	// Store a reference to the <select> `ReactDOMComponent`. TODO: use string
 	var select = ReactElement.createFactory(ReactDOM.select.type);
@@ -15826,7 +15718,7 @@
 
 
 /***/ },
-/* 99 */
+/* 97 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -15843,18 +15735,18 @@
 	"use strict";
 
 	var AutoFocusMixin = __webpack_require__(137);
-	var DOMPropertyOperations = __webpack_require__(24);
+	var DOMPropertyOperations = __webpack_require__(22);
 	var LinkedValueUtils = __webpack_require__(139);
-	var ReactBrowserComponentMixin = __webpack_require__(81);
-	var ReactCompositeComponent = __webpack_require__(28);
-	var ReactElement = __webpack_require__(31);
-	var ReactDOM = __webpack_require__(33);
+	var ReactBrowserComponentMixin = __webpack_require__(79);
+	var ReactCompositeComponent = __webpack_require__(26);
+	var ReactElement = __webpack_require__(29);
+	var ReactDOM = __webpack_require__(31);
 	var ReactUpdates = __webpack_require__(13);
 
-	var assign = __webpack_require__(22);
-	var invariant = __webpack_require__(50);
+	var assign = __webpack_require__(42);
+	var invariant = __webpack_require__(53);
 
-	var warning = __webpack_require__(51);
+	var warning = __webpack_require__(54);
 
 	// Store a reference to the <textarea> `ReactDOMComponent`. TODO: use string
 	var textarea = ReactElement.createFactory(ReactDOM.textarea.type);
@@ -15970,7 +15862,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 100 */
+/* 98 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -15988,13 +15880,13 @@
 	"use strict";
 
 	var EventListener = __webpack_require__(140);
-	var ExecutionEnvironment = __webpack_require__(46);
-	var PooledClass = __webpack_require__(48);
-	var ReactInstanceHandles = __webpack_require__(36);
-	var ReactMount = __webpack_require__(38);
+	var ExecutionEnvironment = __webpack_require__(45);
+	var PooledClass = __webpack_require__(51);
+	var ReactInstanceHandles = __webpack_require__(34);
+	var ReactMount = __webpack_require__(36);
 	var ReactUpdates = __webpack_require__(13);
 
-	var assign = __webpack_require__(22);
+	var assign = __webpack_require__(42);
 	var getEventTarget = __webpack_require__(121);
 	var getUnboundedScrollPosition = __webpack_require__(141);
 
@@ -16158,7 +16050,7 @@
 
 
 /***/ },
-/* 101 */
+/* 99 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -16176,13 +16068,13 @@
 
 	var DOMProperty = __webpack_require__(57);
 	var EventPluginHub = __webpack_require__(61);
-	var ReactComponent = __webpack_require__(27);
-	var ReactCompositeComponent = __webpack_require__(28);
-	var ReactEmptyComponent = __webpack_require__(72);
+	var ReactComponent = __webpack_require__(25);
+	var ReactCompositeComponent = __webpack_require__(26);
+	var ReactEmptyComponent = __webpack_require__(70);
 	var ReactBrowserEventEmitter = __webpack_require__(63);
 	var ReactNativeComponent = __webpack_require__(123);
-	var ReactPerf = __webpack_require__(40);
-	var ReactRootIndex = __webpack_require__(107);
+	var ReactPerf = __webpack_require__(38);
+	var ReactRootIndex = __webpack_require__(105);
 	var ReactUpdates = __webpack_require__(13);
 
 	var ReactInjection = {
@@ -16202,7 +16094,7 @@
 
 
 /***/ },
-/* 102 */
+/* 100 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -16220,13 +16112,13 @@
 
 	var EventConstants = __webpack_require__(60);
 	var EventPropagators = __webpack_require__(62);
-	var ReactInputSelection = __webpack_require__(131);
+	var ReactInputSelection = __webpack_require__(130);
 	var SyntheticEvent = __webpack_require__(64);
 
 	var getActiveElement = __webpack_require__(142);
 	var isTextInputElement = __webpack_require__(129);
 	var keyOf = __webpack_require__(56);
-	var shallowEqual = __webpack_require__(52);
+	var shallowEqual = __webpack_require__(46);
 
 	var topLevelTypes = EventConstants.topLevelTypes;
 
@@ -16401,7 +16293,7 @@
 
 
 /***/ },
-/* 103 */
+/* 101 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -16436,7 +16328,7 @@
 
 
 /***/ },
-/* 104 */
+/* 102 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -16453,13 +16345,13 @@
 	"use strict";
 
 	var EventConstants = __webpack_require__(60);
-	var EventPluginUtils = __webpack_require__(25);
+	var EventPluginUtils = __webpack_require__(23);
 	var EventPropagators = __webpack_require__(62);
 	var SyntheticClipboardEvent = __webpack_require__(143);
 	var SyntheticEvent = __webpack_require__(64);
 	var SyntheticFocusEvent = __webpack_require__(144);
 	var SyntheticKeyboardEvent = __webpack_require__(145);
-	var SyntheticMouseEvent = __webpack_require__(130);
+	var SyntheticMouseEvent = __webpack_require__(133);
 	var SyntheticDragEvent = __webpack_require__(146);
 	var SyntheticTouchEvent = __webpack_require__(147);
 	var SyntheticUIEvent = __webpack_require__(148);
@@ -16467,9 +16359,9 @@
 
 	var getEventCharCode = __webpack_require__(150);
 
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 	var keyOf = __webpack_require__(56);
-	var warning = __webpack_require__(51);
+	var warning = __webpack_require__(54);
 
 	var topLevelTypes = EventConstants.topLevelTypes;
 
@@ -16867,7 +16759,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 105 */
+/* 103 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -16963,7 +16855,7 @@
 
 
 /***/ },
-/* 106 */
+/* 104 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -16981,10 +16873,10 @@
 	"use strict";
 
 	// Defeat circular references by requiring this directly.
-	var ReactCompositeComponent = __webpack_require__(28);
-	var ReactElement = __webpack_require__(31);
+	var ReactCompositeComponent = __webpack_require__(26);
+	var ReactElement = __webpack_require__(29);
 
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	/**
 	 * Create a component that will throw an exception when unmounted.
@@ -17027,7 +16919,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 107 */
+/* 105 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -17062,7 +16954,7 @@
 
 
 /***/ },
-/* 108 */
+/* 106 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -17110,7 +17002,7 @@
 
 
 /***/ },
-/* 109 */
+/* 107 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -17147,6 +17039,115 @@
 
 	module.exports = getReactRootElementInContainer;
 
+
+/***/ },
+/* 108 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright 2013-2014, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 * @providesModule ReactMultiChildUpdateTypes
+	 */
+
+	"use strict";
+
+	var keyMirror = __webpack_require__(69);
+
+	/**
+	 * When a component's children are updated, a series of update configuration
+	 * objects are created in order to batch and serialize the required changes.
+	 *
+	 * Enumerates all the possible types of update configurations.
+	 *
+	 * @internal
+	 */
+	var ReactMultiChildUpdateTypes = keyMirror({
+	  INSERT_MARKUP: null,
+	  MOVE_EXISTING: null,
+	  REMOVE_NODE: null,
+	  TEXT_CONTENT: null
+	});
+
+	module.exports = ReactMultiChildUpdateTypes;
+
+
+/***/ },
+/* 109 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/* WEBPACK VAR INJECTION */(function(process) {/**
+	 * Copyright 2013-2014, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 * @providesModule flattenChildren
+	 */
+
+	"use strict";
+
+	var ReactTextComponent = __webpack_require__(41);
+
+	var traverseAllChildren = __webpack_require__(67);
+	var warning = __webpack_require__(54);
+
+	/**
+	 * @param {function} traverseContext Context passed through traversal.
+	 * @param {?ReactComponent} child React child component.
+	 * @param {!string} name String name of key path to child.
+	 */
+	function flattenSingleChildIntoContext(traverseContext, child, name) {
+	  // We found a component instance.
+	  var result = traverseContext;
+	  var keyUnique = !result.hasOwnProperty(name);
+	  ("production" !== process.env.NODE_ENV ? warning(
+	    keyUnique,
+	    'flattenChildren(...): Encountered two children with the same key, ' +
+	    '`%s`. Child keys must be unique; when two children share a key, only ' +
+	    'the first child will be used.',
+	    name
+	  ) : null);
+	  if (keyUnique && child != null) {
+	    var type = typeof child;
+	    var normalizedValue;
+
+	    if (type === 'string') {
+	      normalizedValue = ReactTextComponent(child);
+	    } else if (type === 'number') {
+	      normalizedValue = ReactTextComponent('' + child);
+	    } else {
+	      normalizedValue = child;
+	    }
+
+	    result[name] = normalizedValue;
+	  }
+	}
+
+	/**
+	 * Flattens children that are typically specified as `props.children`. Any null
+	 * children will not be included in the resulting object.
+	 * @return {!object} flattened children keyed by name.
+	 */
+	function flattenChildren(children) {
+	  if (children == null) {
+	    return children;
+	  }
+	  var result = {};
+	  traverseAllChildren(children, flattenSingleChildIntoContext, result);
+	  return result;
+	}
+
+	module.exports = flattenChildren;
+	
+	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
 /* 110 */
@@ -17218,13 +17219,13 @@
 
 	"use strict";
 
-	var PooledClass = __webpack_require__(48);
-	var CallbackQueue = __webpack_require__(47);
+	var PooledClass = __webpack_require__(51);
+	var CallbackQueue = __webpack_require__(50);
 	var ReactPutListenerQueue = __webpack_require__(153);
-	var Transaction = __webpack_require__(49);
+	var Transaction = __webpack_require__(52);
 
-	var assign = __webpack_require__(22);
-	var emptyFunction = __webpack_require__(54);
+	var assign = __webpack_require__(42);
+	var emptyFunction = __webpack_require__(49);
 
 	/**
 	 * Provides a `CallbackQueue` queue for collecting `onDOMReady` callbacks
@@ -17321,43 +17322,6 @@
 /* 112 */
 /***/ function(module, exports, __webpack_require__) {
 
-	/**
-	 * Copyright 2013-2014, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 * @providesModule ReactMultiChildUpdateTypes
-	 */
-
-	"use strict";
-
-	var keyMirror = __webpack_require__(69);
-
-	/**
-	 * When a component's children are updated, a series of update configuration
-	 * objects are created in order to batch and serialize the required changes.
-	 *
-	 * Enumerates all the possible types of update configurations.
-	 *
-	 * @internal
-	 */
-	var ReactMultiChildUpdateTypes = keyMirror({
-	  INSERT_MARKUP: null,
-	  MOVE_EXISTING: null,
-	  REMOVE_NODE: null,
-	  TEXT_CONTENT: null
-	});
-
-	module.exports = ReactMultiChildUpdateTypes;
-
-
-/***/ },
-/* 113 */
-/***/ function(module, exports, __webpack_require__) {
-
 	/* WEBPACK VAR INJECTION */(function(process) {/**
 	 * Copyright 2013-2014, Facebook, Inc.
 	 * All rights reserved.
@@ -17366,65 +17330,223 @@
 	 * LICENSE file in the root directory of this source tree. An additional grant
 	 * of patent rights can be found in the PATENTS file in the same directory.
 	 *
-	 * @providesModule flattenChildren
+	 * @providesModule CSSCore
+	 * @typechecks
+	 */
+
+	var invariant = __webpack_require__(53);
+
+	/**
+	 * The CSSCore module specifies the API (and implements most of the methods)
+	 * that should be used when dealing with the display of elements (via their
+	 * CSS classes and visibility on screen. It is an API focused on mutating the
+	 * display and not reading it as no logical state should be encoded in the
+	 * display of elements.
+	 */
+
+	var CSSCore = {
+
+	  /**
+	   * Adds the class passed in to the element if it doesn't already have it.
+	   *
+	   * @param {DOMElement} element the element to set the class on
+	   * @param {string} className the CSS className
+	   * @return {DOMElement} the element passed in
+	   */
+	  addClass: function(element, className) {
+	    ("production" !== process.env.NODE_ENV ? invariant(
+	      !/\s/.test(className),
+	      'CSSCore.addClass takes only a single class name. "%s" contains ' +
+	      'multiple classes.', className
+	    ) : invariant(!/\s/.test(className)));
+
+	    if (className) {
+	      if (element.classList) {
+	        element.classList.add(className);
+	      } else if (!CSSCore.hasClass(element, className)) {
+	        element.className = element.className + ' ' + className;
+	      }
+	    }
+	    return element;
+	  },
+
+	  /**
+	   * Removes the class passed in from the element
+	   *
+	   * @param {DOMElement} element the element to set the class on
+	   * @param {string} className the CSS className
+	   * @return {DOMElement} the element passed in
+	   */
+	  removeClass: function(element, className) {
+	    ("production" !== process.env.NODE_ENV ? invariant(
+	      !/\s/.test(className),
+	      'CSSCore.removeClass takes only a single class name. "%s" contains ' +
+	      'multiple classes.', className
+	    ) : invariant(!/\s/.test(className)));
+
+	    if (className) {
+	      if (element.classList) {
+	        element.classList.remove(className);
+	      } else if (CSSCore.hasClass(element, className)) {
+	        element.className = element.className
+	          .replace(new RegExp('(^|\\s)' + className + '(?:\\s|$)', 'g'), '$1')
+	          .replace(/\s+/g, ' ') // multiple spaces to one
+	          .replace(/^\s*|\s*$/g, ''); // trim the ends
+	      }
+	    }
+	    return element;
+	  },
+
+	  /**
+	   * Helper to add or remove a class from an element based on a condition.
+	   *
+	   * @param {DOMElement} element the element to set the class on
+	   * @param {string} className the CSS className
+	   * @param {*} bool condition to whether to add or remove the class
+	   * @return {DOMElement} the element passed in
+	   */
+	  conditionClass: function(element, className, bool) {
+	    return (bool ? CSSCore.addClass : CSSCore.removeClass)(element, className);
+	  },
+
+	  /**
+	   * Tests whether the element has the class specified.
+	   *
+	   * @param {DOMNode|DOMWindow} element the element to set the class on
+	   * @param {string} className the CSS className
+	   * @return {boolean} true if the element has the class, false if not
+	   */
+	  hasClass: function(element, className) {
+	    ("production" !== process.env.NODE_ENV ? invariant(
+	      !/\s/.test(className),
+	      'CSS.hasClass takes only a single class name.'
+	    ) : invariant(!/\s/.test(className)));
+	    if (element.classList) {
+	      return !!className && element.classList.contains(className);
+	    }
+	    return (' ' + element.className + ' ').indexOf(' ' + className + ' ') > -1;
+	  }
+
+	};
+
+	module.exports = CSSCore;
+	
+	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
+
+/***/ },
+/* 113 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright 2013-2014, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 * @providesModule ReactTransitionEvents
 	 */
 
 	"use strict";
 
-	var ReactTextComponent = __webpack_require__(43);
-
-	var traverseAllChildren = __webpack_require__(67);
-	var warning = __webpack_require__(51);
+	var ExecutionEnvironment = __webpack_require__(45);
 
 	/**
-	 * @param {function} traverseContext Context passed through traversal.
-	 * @param {?ReactComponent} child React child component.
-	 * @param {!string} name String name of key path to child.
+	 * EVENT_NAME_MAP is used to determine which event fired when a
+	 * transition/animation ends, based on the style property used to
+	 * define that event.
 	 */
-	function flattenSingleChildIntoContext(traverseContext, child, name) {
-	  // We found a component instance.
-	  var result = traverseContext;
-	  var keyUnique = !result.hasOwnProperty(name);
-	  ("production" !== process.env.NODE_ENV ? warning(
-	    keyUnique,
-	    'flattenChildren(...): Encountered two children with the same key, ' +
-	    '`%s`. Child keys must be unique; when two children share a key, only ' +
-	    'the first child will be used.',
-	    name
-	  ) : null);
-	  if (keyUnique && child != null) {
-	    var type = typeof child;
-	    var normalizedValue;
+	var EVENT_NAME_MAP = {
+	  transitionend: {
+	    'transition': 'transitionend',
+	    'WebkitTransition': 'webkitTransitionEnd',
+	    'MozTransition': 'mozTransitionEnd',
+	    'OTransition': 'oTransitionEnd',
+	    'msTransition': 'MSTransitionEnd'
+	  },
 
-	    if (type === 'string') {
-	      normalizedValue = ReactTextComponent(child);
-	    } else if (type === 'number') {
-	      normalizedValue = ReactTextComponent('' + child);
-	    } else {
-	      normalizedValue = child;
+	  animationend: {
+	    'animation': 'animationend',
+	    'WebkitAnimation': 'webkitAnimationEnd',
+	    'MozAnimation': 'mozAnimationEnd',
+	    'OAnimation': 'oAnimationEnd',
+	    'msAnimation': 'MSAnimationEnd'
+	  }
+	};
+
+	var endEvents = [];
+
+	function detectEvents() {
+	  var testEl = document.createElement('div');
+	  var style = testEl.style;
+
+	  // On some platforms, in particular some releases of Android 4.x,
+	  // the un-prefixed "animation" and "transition" properties are defined on the
+	  // style object but the events that fire will still be prefixed, so we need
+	  // to check if the un-prefixed events are useable, and if not remove them
+	  // from the map
+	  if (!('AnimationEvent' in window)) {
+	    delete EVENT_NAME_MAP.animationend.animation;
+	  }
+
+	  if (!('TransitionEvent' in window)) {
+	    delete EVENT_NAME_MAP.transitionend.transition;
+	  }
+
+	  for (var baseEventName in EVENT_NAME_MAP) {
+	    var baseEvents = EVENT_NAME_MAP[baseEventName];
+	    for (var styleName in baseEvents) {
+	      if (styleName in style) {
+	        endEvents.push(baseEvents[styleName]);
+	        break;
+	      }
 	    }
-
-	    result[name] = normalizedValue;
 	  }
 	}
 
-	/**
-	 * Flattens children that are typically specified as `props.children`. Any null
-	 * children will not be included in the resulting object.
-	 * @return {!object} flattened children keyed by name.
-	 */
-	function flattenChildren(children) {
-	  if (children == null) {
-	    return children;
-	  }
-	  var result = {};
-	  traverseAllChildren(children, flattenSingleChildIntoContext, result);
-	  return result;
+	if (ExecutionEnvironment.canUseDOM) {
+	  detectEvents();
 	}
 
-	module.exports = flattenChildren;
-	
-	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
+	// We use the raw {add|remove}EventListener() call because EventListener
+	// does not know how to remove event listeners and we really should
+	// clean up. Also, these events are not triggered in older browsers
+	// so we should be A-OK here.
+
+	function addEventListener(node, eventName, eventListener) {
+	  node.addEventListener(eventName, eventListener, false);
+	}
+
+	function removeEventListener(node, eventName, eventListener) {
+	  node.removeEventListener(eventName, eventListener, false);
+	}
+
+	var ReactTransitionEvents = {
+	  addEndEventListener: function(node, eventListener) {
+	    if (endEvents.length === 0) {
+	      // If CSS transitions are not supported, trigger an "end animation"
+	      // event immediately.
+	      window.setTimeout(eventListener, 0);
+	      return;
+	    }
+	    endEvents.forEach(function(endEvent) {
+	      addEventListener(node, endEvent, eventListener);
+	    });
+	  },
+
+	  removeEndEventListener: function(node, eventListener) {
+	    if (endEvents.length === 0) {
+	      return;
+	    }
+	    endEvents.forEach(function(endEvent) {
+	      removeEventListener(node, endEvent, eventListener);
+	    });
+	  }
+	};
+
+	module.exports = ReactTransitionEvents;
+
 
 /***/ },
 /* 114 */
@@ -17489,7 +17611,7 @@
 
 	"use strict";
 
-	var ExecutionEnvironment = __webpack_require__(46);
+	var ExecutionEnvironment = __webpack_require__(45);
 
 	var performance;
 
@@ -17521,7 +17643,7 @@
 
 	"use strict";
 
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	/**
 	 * Injectable ordering of event plugins.
@@ -17803,7 +17925,7 @@
 
 	"use strict";
 
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	/**
 	 *
@@ -18059,8 +18181,8 @@
 
 	"use strict";
 
-	var assign = __webpack_require__(22);
-	var invariant = __webpack_require__(50);
+	var assign = __webpack_require__(42);
+	var invariant = __webpack_require__(53);
 
 	var genericComponentClass = null;
 	// This registry keeps track of wrapper classes around native tags
@@ -18505,102 +18627,15 @@
 	 * LICENSE file in the root directory of this source tree. An additional grant
 	 * of patent rights can be found in the PATENTS file in the same directory.
 	 *
-	 * @providesModule SyntheticMouseEvent
-	 * @typechecks static-only
-	 */
-
-	"use strict";
-
-	var SyntheticUIEvent = __webpack_require__(148);
-	var ViewportMetrics = __webpack_require__(120);
-
-	var getEventModifierState = __webpack_require__(156);
-
-	/**
-	 * @interface MouseEvent
-	 * @see http://www.w3.org/TR/DOM-Level-3-Events/
-	 */
-	var MouseEventInterface = {
-	  screenX: null,
-	  screenY: null,
-	  clientX: null,
-	  clientY: null,
-	  ctrlKey: null,
-	  shiftKey: null,
-	  altKey: null,
-	  metaKey: null,
-	  getModifierState: getEventModifierState,
-	  button: function(event) {
-	    // Webkit, Firefox, IE9+
-	    // which:  1 2 3
-	    // button: 0 1 2 (standard)
-	    var button = event.button;
-	    if ('which' in event) {
-	      return button;
-	    }
-	    // IE<9
-	    // which:  undefined
-	    // button: 0 0 0
-	    // button: 1 4 2 (onmouseup)
-	    return button === 2 ? 2 : button === 4 ? 1 : 0;
-	  },
-	  buttons: null,
-	  relatedTarget: function(event) {
-	    return event.relatedTarget || (
-	      event.fromElement === event.srcElement ?
-	        event.toElement :
-	        event.fromElement
-	    );
-	  },
-	  // "Proprietary" Interface.
-	  pageX: function(event) {
-	    return 'pageX' in event ?
-	      event.pageX :
-	      event.clientX + ViewportMetrics.currentScrollLeft;
-	  },
-	  pageY: function(event) {
-	    return 'pageY' in event ?
-	      event.pageY :
-	      event.clientY + ViewportMetrics.currentScrollTop;
-	  }
-	};
-
-	/**
-	 * @param {object} dispatchConfig Configuration used to dispatch this event.
-	 * @param {string} dispatchMarker Marker identifying the event target.
-	 * @param {object} nativeEvent Native browser event.
-	 * @extends {SyntheticUIEvent}
-	 */
-	function SyntheticMouseEvent(dispatchConfig, dispatchMarker, nativeEvent) {
-	  SyntheticUIEvent.call(this, dispatchConfig, dispatchMarker, nativeEvent);
-	}
-
-	SyntheticUIEvent.augmentClass(SyntheticMouseEvent, MouseEventInterface);
-
-	module.exports = SyntheticMouseEvent;
-
-
-/***/ },
-/* 131 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/**
-	 * Copyright 2013-2014, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
 	 * @providesModule ReactInputSelection
 	 */
 
 	"use strict";
 
-	var ReactDOMSelection = __webpack_require__(157);
+	var ReactDOMSelection = __webpack_require__(156);
 
-	var containsNode = __webpack_require__(108);
-	var focusNode = __webpack_require__(158);
+	var containsNode = __webpack_require__(106);
+	var focusNode = __webpack_require__(157);
 	var getActiveElement = __webpack_require__(142);
 
 	function isInDocument(node) {
@@ -18721,7 +18756,7 @@
 
 
 /***/ },
-/* 132 */
+/* 131 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -18771,7 +18806,7 @@
 
 
 /***/ },
-/* 133 */
+/* 132 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -18787,7 +18822,7 @@
 
 	"use strict";
 
-	var ExecutionEnvironment = __webpack_require__(46);
+	var ExecutionEnvironment = __webpack_require__(45);
 
 	var contentKey = null;
 
@@ -18812,6 +18847,93 @@
 
 
 /***/ },
+/* 133 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright 2013-2014, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 * @providesModule SyntheticMouseEvent
+	 * @typechecks static-only
+	 */
+
+	"use strict";
+
+	var SyntheticUIEvent = __webpack_require__(148);
+	var ViewportMetrics = __webpack_require__(120);
+
+	var getEventModifierState = __webpack_require__(158);
+
+	/**
+	 * @interface MouseEvent
+	 * @see http://www.w3.org/TR/DOM-Level-3-Events/
+	 */
+	var MouseEventInterface = {
+	  screenX: null,
+	  screenY: null,
+	  clientX: null,
+	  clientY: null,
+	  ctrlKey: null,
+	  shiftKey: null,
+	  altKey: null,
+	  metaKey: null,
+	  getModifierState: getEventModifierState,
+	  button: function(event) {
+	    // Webkit, Firefox, IE9+
+	    // which:  1 2 3
+	    // button: 0 1 2 (standard)
+	    var button = event.button;
+	    if ('which' in event) {
+	      return button;
+	    }
+	    // IE<9
+	    // which:  undefined
+	    // button: 0 0 0
+	    // button: 1 4 2 (onmouseup)
+	    return button === 2 ? 2 : button === 4 ? 1 : 0;
+	  },
+	  buttons: null,
+	  relatedTarget: function(event) {
+	    return event.relatedTarget || (
+	      event.fromElement === event.srcElement ?
+	        event.toElement :
+	        event.fromElement
+	    );
+	  },
+	  // "Proprietary" Interface.
+	  pageX: function(event) {
+	    return 'pageX' in event ?
+	      event.pageX :
+	      event.clientX + ViewportMetrics.currentScrollLeft;
+	  },
+	  pageY: function(event) {
+	    return 'pageY' in event ?
+	      event.pageY :
+	      event.clientY + ViewportMetrics.currentScrollTop;
+	  }
+	};
+
+	/**
+	 * @param {object} dispatchConfig Configuration used to dispatch this event.
+	 * @param {string} dispatchMarker Marker identifying the event target.
+	 * @param {object} nativeEvent Native browser event.
+	 * @extends {SyntheticUIEvent}
+	 */
+	function SyntheticMouseEvent(dispatchConfig, dispatchMarker, nativeEvent) {
+	  SyntheticUIEvent.call(this, dispatchConfig, dispatchMarker, nativeEvent);
+	}
+
+	SyntheticUIEvent.augmentClass(SyntheticMouseEvent, MouseEventInterface);
+
+	module.exports = SyntheticMouseEvent;
+
+
+/***/ },
 /* 134 */
 /***/ function(module, exports, __webpack_require__) {
 
@@ -18831,13 +18953,13 @@
 
 	"use strict";
 
-	var CSSPropertyOperations = __webpack_require__(80);
+	var CSSPropertyOperations = __webpack_require__(78);
 	var DOMChildrenOperations = __webpack_require__(159);
-	var DOMPropertyOperations = __webpack_require__(24);
-	var ReactMount = __webpack_require__(38);
-	var ReactPerf = __webpack_require__(40);
+	var DOMPropertyOperations = __webpack_require__(22);
+	var ReactMount = __webpack_require__(36);
+	var ReactPerf = __webpack_require__(38);
 
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 	var setInnerHTML = __webpack_require__(136);
 
 	/**
@@ -19018,14 +19140,14 @@
 
 	"use strict";
 
-	var CallbackQueue = __webpack_require__(47);
-	var PooledClass = __webpack_require__(48);
+	var CallbackQueue = __webpack_require__(50);
+	var PooledClass = __webpack_require__(51);
 	var ReactBrowserEventEmitter = __webpack_require__(63);
-	var ReactInputSelection = __webpack_require__(131);
+	var ReactInputSelection = __webpack_require__(130);
 	var ReactPutListenerQueue = __webpack_require__(153);
-	var Transaction = __webpack_require__(49);
+	var Transaction = __webpack_require__(52);
 
-	var assign = __webpack_require__(22);
+	var assign = __webpack_require__(42);
 
 	/**
 	 * Ensures that, when possible, the selection range (currently selected text
@@ -19197,7 +19319,7 @@
 
 	"use strict";
 
-	var ExecutionEnvironment = __webpack_require__(46);
+	var ExecutionEnvironment = __webpack_require__(45);
 
 	var WHITESPACE_TEST = /^[ \r\n\t\f]/;
 	var NONVISIBLE_TEST = /<(!--|link|noscript|meta|script|style)[ \r\n\t\f\/>]/;
@@ -19280,7 +19402,7 @@
 
 	"use strict";
 
-	var focusNode = __webpack_require__(158);
+	var focusNode = __webpack_require__(157);
 
 	var AutoFocusMixin = {
 	  componentDidMount: function() {
@@ -19314,7 +19436,7 @@
 
 	var accumulateInto = __webpack_require__(117);
 	var forEachAccumulated = __webpack_require__(118);
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	function remove(event) {
 	  event.remove();
@@ -19364,9 +19486,9 @@
 
 	"use strict";
 
-	var ReactPropTypes = __webpack_require__(41);
+	var ReactPropTypes = __webpack_require__(39);
 
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	var hasReadOnlyValue = {
 	  'button': true,
@@ -19528,7 +19650,7 @@
 	 * @typechecks
 	 */
 
-	var emptyFunction = __webpack_require__(54);
+	var emptyFunction = __webpack_require__(49);
 
 	/**
 	 * Upstream version of event listener. Does not take into account specific
@@ -19790,7 +19912,7 @@
 
 	var getEventCharCode = __webpack_require__(150);
 	var getEventKey = __webpack_require__(160);
-	var getEventModifierState = __webpack_require__(156);
+	var getEventModifierState = __webpack_require__(158);
 
 	/**
 	 * @interface KeyboardEvent
@@ -19877,7 +19999,7 @@
 
 	"use strict";
 
-	var SyntheticMouseEvent = __webpack_require__(130);
+	var SyntheticMouseEvent = __webpack_require__(133);
 
 	/**
 	 * @interface DragEvent
@@ -19922,7 +20044,7 @@
 
 	var SyntheticUIEvent = __webpack_require__(148);
 
-	var getEventModifierState = __webpack_require__(156);
+	var getEventModifierState = __webpack_require__(158);
 
 	/**
 	 * @interface TouchEvent
@@ -20038,7 +20160,7 @@
 
 	"use strict";
 
-	var SyntheticMouseEvent = __webpack_require__(130);
+	var SyntheticMouseEvent = __webpack_require__(133);
 
 	/**
 	 * @interface WheelEvent
@@ -20225,10 +20347,10 @@
 
 	"use strict";
 
-	var PooledClass = __webpack_require__(48);
+	var PooledClass = __webpack_require__(51);
 	var ReactBrowserEventEmitter = __webpack_require__(63);
 
-	var assign = __webpack_require__(22);
+	var assign = __webpack_require__(42);
 
 	function ReactPutListenerQueue() {
 	  this.listenersToPut = [];
@@ -20346,57 +20468,6 @@
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
-	 * Copyright 2013 Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 * @providesModule getEventModifierState
-	 * @typechecks static-only
-	 */
-
-	"use strict";
-
-	/**
-	 * Translation from modifier key to the associated property in the event.
-	 * @see http://www.w3.org/TR/DOM-Level-3-Events/#keys-Modifiers
-	 */
-
-	var modifierKeyToProp = {
-	  'Alt': 'altKey',
-	  'Control': 'ctrlKey',
-	  'Meta': 'metaKey',
-	  'Shift': 'shiftKey'
-	};
-
-	// IE8 does not implement getModifierState so we simply map it to the only
-	// modifier keys exposed by the event itself, does not support Lock-keys.
-	// Currently, all major browsers except Chrome seems to support Lock-keys.
-	function modifierStateGetter(keyArg) {
-	  /*jshint validthis:true */
-	  var syntheticEvent = this;
-	  var nativeEvent = syntheticEvent.nativeEvent;
-	  if (nativeEvent.getModifierState) {
-	    return nativeEvent.getModifierState(keyArg);
-	  }
-	  var keyProp = modifierKeyToProp[keyArg];
-	  return keyProp ? !!nativeEvent[keyProp] : false;
-	}
-
-	function getEventModifierState(nativeEvent) {
-	  return modifierStateGetter;
-	}
-
-	module.exports = getEventModifierState;
-
-
-/***/ },
-/* 157 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/**
 	 * Copyright 2013-2014, Facebook, Inc.
 	 * All rights reserved.
 	 *
@@ -20409,10 +20480,10 @@
 
 	"use strict";
 
-	var ExecutionEnvironment = __webpack_require__(46);
+	var ExecutionEnvironment = __webpack_require__(45);
 
 	var getNodeForCharacterOffset = __webpack_require__(162);
-	var getTextContentAccessor = __webpack_require__(133);
+	var getTextContentAccessor = __webpack_require__(132);
 
 	/**
 	 * While `isCollapsed` is available on the Selection object and `collapsed`
@@ -20606,7 +20677,7 @@
 
 
 /***/ },
-/* 158 */
+/* 157 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -20639,6 +20710,57 @@
 
 
 /***/ },
+/* 158 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright 2013 Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 * @providesModule getEventModifierState
+	 * @typechecks static-only
+	 */
+
+	"use strict";
+
+	/**
+	 * Translation from modifier key to the associated property in the event.
+	 * @see http://www.w3.org/TR/DOM-Level-3-Events/#keys-Modifiers
+	 */
+
+	var modifierKeyToProp = {
+	  'Alt': 'altKey',
+	  'Control': 'ctrlKey',
+	  'Meta': 'metaKey',
+	  'Shift': 'shiftKey'
+	};
+
+	// IE8 does not implement getModifierState so we simply map it to the only
+	// modifier keys exposed by the event itself, does not support Lock-keys.
+	// Currently, all major browsers except Chrome seems to support Lock-keys.
+	function modifierStateGetter(keyArg) {
+	  /*jshint validthis:true */
+	  var syntheticEvent = this;
+	  var nativeEvent = syntheticEvent.nativeEvent;
+	  if (nativeEvent.getModifierState) {
+	    return nativeEvent.getModifierState(keyArg);
+	  }
+	  var keyProp = modifierKeyToProp[keyArg];
+	  return keyProp ? !!nativeEvent[keyProp] : false;
+	}
+
+	function getEventModifierState(nativeEvent) {
+	  return modifierStateGetter;
+	}
+
+	module.exports = getEventModifierState;
+
+
+/***/ },
 /* 159 */
 /***/ function(module, exports, __webpack_require__) {
 
@@ -20657,10 +20779,10 @@
 	"use strict";
 
 	var Danger = __webpack_require__(163);
-	var ReactMultiChildUpdateTypes = __webpack_require__(112);
+	var ReactMultiChildUpdateTypes = __webpack_require__(108);
 
-	var getTextContentAccessor = __webpack_require__(133);
-	var invariant = __webpack_require__(50);
+	var getTextContentAccessor = __webpack_require__(132);
+	var invariant = __webpack_require__(53);
 
 	/**
 	 * The DOM property to use when setting text content.
@@ -21056,12 +21178,12 @@
 
 	"use strict";
 
-	var ExecutionEnvironment = __webpack_require__(46);
+	var ExecutionEnvironment = __webpack_require__(45);
 
 	var createNodesFromMarkup = __webpack_require__(164);
-	var emptyFunction = __webpack_require__(54);
+	var emptyFunction = __webpack_require__(49);
 	var getMarkupWrap = __webpack_require__(165);
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	var OPEN_TAG_NAME_EXP = /^(<[^ \/>]+)/;
 	var RESULT_INDEX_ATTR = 'data-danger-index';
@@ -21243,11 +21365,11 @@
 
 	/*jslint evil: true, sub: true */
 
-	var ExecutionEnvironment = __webpack_require__(46);
+	var ExecutionEnvironment = __webpack_require__(45);
 
 	var createArrayFrom = __webpack_require__(166);
 	var getMarkupWrap = __webpack_require__(165);
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	/**
 	 * Dummy container used to render all markup.
@@ -21333,9 +21455,9 @@
 	 * @providesModule getMarkupWrap
 	 */
 
-	var ExecutionEnvironment = __webpack_require__(46);
+	var ExecutionEnvironment = __webpack_require__(45);
 
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	/**
 	 * Dummy container used to detect which wraps are necessary.
@@ -21544,7 +21666,7 @@
 	 * @typechecks
 	 */
 
-	var invariant = __webpack_require__(50);
+	var invariant = __webpack_require__(53);
 
 	/**
 	 * Convert array-like objects to arrays.
