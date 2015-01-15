@@ -674,7 +674,7 @@
 	     *     Uncontrolled: It will just follow the modeled behavior until it comes to a halt.
 	     *                   Note that you might still know where it ends,
 	     *                   e.g. with gravity it will eventually stop at the ground.
-	     *         examples: friction, gravity
+	     *         examples: slide, gravity
 	     * 
 	     *  + Physically accurate, natural movement
 	     *  - You don't know when it stops exactly, less control.
@@ -691,7 +691,7 @@
 	     *             //   where o : { value: Num, velocity: Num, acceleration: Num, (Optional)endValue: Num }
 	     *             //     NOTE: f can modify obj in place and then return the modified version!
 	     *             // DEFAULT: if endValue specified: Model.controlled.criticallyDamped
-	     *             //          else Model.uncontrolled.friction
+	     *             //          else Model.uncontrolled.slide
 	     *         endValue: 42,
 	     *             // If you use a function from Model.controlled.* specify the end value here,
 	     *             // else omit the property. Its either a number
@@ -715,7 +715,7 @@
 	     *     }
 	     * }
 	     */
-	    simulateToHalt:function(newState) {
+	    simulateToHalt:function(newState, dontStop) {
 	        for (var p in newState) {
 	            var config = newState[p];
 	            var anim = this.cancelAnimation(p);
@@ -734,11 +734,15 @@
 	            if (isControlled) {
 	                modelFn = modelFn || Model.controlled.criticalDamped;
 	            } else {
-	                modelFn = modelFn || Model.uncontrolled.friction;
+	                modelFn = modelFn || Model.uncontrolled.slide;
 	            }
 	            var endCondition = config.endCondition;
 	            if (isControlled) {
-	                endCondition = endCondition || Model.helpers.stopControlled;
+	                if (dontStop) {
+	                    endCondition = endCondition || Model.helpers.dontStop;    
+	                } else {
+	                    endCondition = endCondition || Model.helpers.stopControlled;
+	                }
 	            } else {
 	                endCondition = endCondition || Model.helpers.stopUncontrolled;
 	            }
@@ -828,7 +832,7 @@
 	     * @newState: refer to a controlled simulateToHalt()
 	     */
 	    startIndirectUserInput:function(newState) {
-	        this.simulateToHalt(newState);
+	        this.simulateToHalt(newState, true);
 	        // for (var p in newState) {
 	        //     var config = newState[p];
 	        //     var anim = this.cancelAnimation(p);
@@ -952,6 +956,8 @@
 
 	var Model = {};
 
+	var eps = 0.01;
+
 	Model.helpers = {
 	    /*
 	     * Used internally for animating
@@ -963,47 +969,73 @@
 	    	var halfV = v + 0.5*a*dt;
 	    	obj.value = x + halfV*dt;
 	    	obj.velocity = halfV + 0.5*newA*dt;
+	    	obj.acceleration = newA;
 	    	if (obj.endCondition(obj)) {
 	    		obj.finished = true;
 	    	}
 	    	return obj;
 	    },
-	    // TODO!!!
 	    constrain:function(simulation, constraints) {
 	    	return function(obj, dt, t)  {
-	    		// TODO: Integrate first, then check if the constraint is
-	    		// fulfilled, if not, solve the problem with the solver.
-	    		// So a constraint could be: (x) => x>ground
-	    		// A solver could be: (x1, v1) => (x2=ground+c*(ground-x1), v2=-c*v1)
+	    		// Integrate first, then check if the constraint is
+	    		// fulfilled, if not, run the constraint to fix the problem
 	    		var o = simulation(obj, dt, t);
 	    		for (var i = 0, l = constraints.length; i < l; i++) {
-	    			var cont = constraints[i];
-	    			if (cont.restrict(o)) {
-	    				cont.resolve(o);
-	    			}
+	    			constraints[i](o, dt);
 	    		}
+	    		return o;
 	    	};
 	    },
 	    stopControlled:function(o) {
-	    	var cond = Math.abs(o.endValue-o.value) < 0.0001 && Math.abs(o.velocity) < 0.0001;
+	    	var cond = Math.abs(o.endValue-o.value) < eps && Math.abs(o.velocity) < eps;
 	    	if (cond) {
 	    		// Make sure the end value is exactly endValue
 	    		o.value = o.endValue;
+	    		console.log("stop controlled");
 	    	}
 	    	return cond;
 	    },
 	    stopUncontrolled:function(o) {
-	    	return Math.abs(o.velocity) < 0.0001 && Math.abs(o.acceleration) < 0.0001;
+	    	var cond = Math.abs(o.velocity) < eps && Math.abs(o.acceleration) < eps;
+	    	if(cond) {
+	    		console.log("stop uncontrolled");
+	    	}
+	    	return cond;
+	    },
+	    dontStop:function(o) {
+	    	return false;
 	    }
+	};
+	Model.constraints = {
+		boundaries:function(lower, upper, elasticConstant) {
+			var l = typeof lower !== 'undefined' ? lower : -Infinity;
+			var u = typeof upper !== 'undefined' ? upper : Infinity;
+			var e = typeof elasticConstant !== 'undefined' ? elasticConstant : 0.8;
+			return function(o, dt)  {
+				var stopped = true;
+				if (o.value < l) {
+					o.value = l;
+				} else if (o.value > u) {
+					o.value = u;
+				} else {stopped = false; }
+				if (stopped) {
+					o.velocity = -e*e*o.velocity;
+					if (Math.abs(o.velocity) < eps) {
+						o.value = o.value - o.velocity*dt;
+						o.acceleration = 0;
+					}
+				}
+			};
+		}
 	};
 
 	Model.forces = {
 		/* a simple friction force */
 		friction:function(frictionCoefficient) {
 			return function(v)  {
-				if (v > 0) {
+				if (v > eps) {
 					return -frictionCoefficient;
-				} else if (v < 0) {
+				} else if (v < -eps) {
 					return frictionCoefficient;
 				} return 0;
 			};
@@ -1013,7 +1045,13 @@
 		},
 		/* Drag equation with a high Reynolds number */
 		fluidDrag:function(dragConstant) {
-			return function(v)  {return -dragConstant*v*v;};
+			return function(v)  {
+				if (v > 0) {
+					return -dragConstant*v*v;
+				} else {
+					return dragConstant*v*v;
+				}
+			};
 		},
 		/* Drag equation with a low Reynolds number */
 		airDrag:function(dragConstant) {
@@ -1049,35 +1087,52 @@
 	Model.controlled.make.damper = function(mass, damping)  {
 		return Model.controlled.make.massSpringDamper(mass, 0, damping);
 	};
-	Model.controlled.underDamped = Model.controlled.make.dampedHarmonicOscillator(20, 0.7);
-	Model.controlled.overDamped = Model.controlled.make.dampedHarmonicOscillator(20, 1.3);
-	Model.controlled.criticallyDamped = Model.controlled.make.criticallyDamped(20);
+	Model.controlled.underDamped = Model.controlled.make.dampedHarmonicOscillator(10, 0.5);
+	Model.controlled.overDamped = Model.controlled.make.dampedHarmonicOscillator(10, 1.3);
+	Model.controlled.criticallyDamped = Model.controlled.make.criticallyDamped(10);
 
 
 	// ### Uncontrolled ###
 	Model.uncontrolled = {};
 	Model.uncontrolled.make = {
 		gravity:function(g) {
-			var g_ = Model.forces.gravity(g);
+			var fg = Model.forces.gravity(g);
 			return function(obj, dt, t)  {
-				return Model.helpers.verletIntegration(obj, g_, dt);
+				return Model.helpers.verletIntegration(obj, fg, dt);
 			};
 		},
 		slide:function(friction) {
 			var f = Model.forces.friction(friction);
 			return function(obj, dt, t)  {
-				return Model.helpers.verletIntegration(obj, f, dt);
+				return Model.helpers.verletIntegration(obj, f(obj.velocity), dt);
 			};
 		},
 		slidePhysical:function(mass, g, friction) {
 			var f = Model.forces.friction(g*mass*friction);
 			return function(obj, dt, t)  {
-				return Model.helpers.verletIntegration(obj, f, dt);
+				return Model.helpers.verletIntegration(obj, f(obj.velocity), dt);
+			};
+		},
+		airDrag:function(constant) {
+			var f = Model.forces.airDrag(constant);
+			return function(obj, dt, t)  {
+				return Model.helpers.verletIntegration(obj, f(obj.velocity), dt);
+			};
+		},
+		fluidDrag:function(constant) {
+			var f = Model.forces.fluidDrag(constant);
+			return function(obj, dt, t)  {
+				return Model.helpers.verletIntegration(obj, f(obj.velocity), dt);
 			};
 		}
 	};
-	// Model.gravity = 
-	Model.uncontrolled.slide = Model.uncontrolled.make.slide(10);
+	Model.uncontrolled.gravity = Model.uncontrolled.make.gravity(10);
+	Model.uncontrolled.gravityUpsideDown = Model.uncontrolled.make.gravity(-10);
+	Model.uncontrolled.slide = Model.uncontrolled.make.slide(1);
+	Model.uncontrolled.airDrag = Model.uncontrolled.make.airDrag(0.5);
+	Model.uncontrolled.damper = Model.uncontrolled.make.airDrag(5);
+	Model.uncontrolled.fluidDrag = Model.uncontrolled.make.fluidDrag(5);
+	Model.uncontrolled.nothing = function(obj, dt, t)  {return Model.helpers.verletIntegration(obj, 0, dt);};
 
 	module.exports = Model;
 
@@ -1486,7 +1541,7 @@
 	  __webpack_require__(12)
 	);
 	var ReactCSSTransitionGroupChild = React.createFactory(
-	  __webpack_require__(47)
+	  __webpack_require__(49)
 	);
 
 	var ReactCSSTransitionGroup = React.createClass({
@@ -1549,11 +1604,11 @@
 	"use strict";
 
 	var React = __webpack_require__(9);
-	var ReactTransitionChildMapping = __webpack_require__(48);
+	var ReactTransitionChildMapping = __webpack_require__(47);
 
 	var assign = __webpack_require__(42);
 	var cloneWithProps = __webpack_require__(15);
-	var emptyFunction = __webpack_require__(49);
+	var emptyFunction = __webpack_require__(48);
 
 	var ReactTransitionGroup = React.createClass({
 	  displayName: 'ReactTransitionGroup',
@@ -2311,12 +2366,12 @@
 
 	"use strict";
 
-	var DOMProperty = __webpack_require__(57);
-	var ReactDefaultPerfAnalysis = __webpack_require__(58);
+	var DOMProperty = __webpack_require__(62);
+	var ReactDefaultPerfAnalysis = __webpack_require__(63);
 	var ReactMount = __webpack_require__(36);
 	var ReactPerf = __webpack_require__(38);
 
-	var performanceNow = __webpack_require__(59);
+	var performanceNow = __webpack_require__(64);
 
 	function roundFloat(val) {
 	  return Math.floor(val * 100) / 100;
@@ -2574,16 +2629,16 @@
 
 	"use strict";
 
-	var EventConstants = __webpack_require__(60);
-	var EventPluginHub = __webpack_require__(61);
-	var EventPropagators = __webpack_require__(62);
+	var EventConstants = __webpack_require__(57);
+	var EventPluginHub = __webpack_require__(58);
+	var EventPropagators = __webpack_require__(59);
 	var React = __webpack_require__(9);
 	var ReactElement = __webpack_require__(29);
-	var ReactBrowserEventEmitter = __webpack_require__(63);
+	var ReactBrowserEventEmitter = __webpack_require__(60);
 	var ReactMount = __webpack_require__(36);
 	var ReactTextComponent = __webpack_require__(41);
 	var ReactUpdates = __webpack_require__(13);
-	var SyntheticEvent = __webpack_require__(64);
+	var SyntheticEvent = __webpack_require__(61);
 
 	var assign = __webpack_require__(42);
 
@@ -3270,7 +3325,7 @@
 
 	"use strict";
 
-	var DOMProperty = __webpack_require__(57);
+	var DOMProperty = __webpack_require__(62);
 
 	var escapeTextForBrowser = __webpack_require__(65);
 	var memoizeStringOnly = __webpack_require__(66);
@@ -3469,7 +3524,7 @@
 
 	"use strict";
 
-	var EventConstants = __webpack_require__(60);
+	var EventConstants = __webpack_require__(57);
 
 	var invariant = __webpack_require__(53);
 
@@ -6561,11 +6616,11 @@
 	"use strict";
 
 	var CSSPropertyOperations = __webpack_require__(78);
-	var DOMProperty = __webpack_require__(57);
+	var DOMProperty = __webpack_require__(62);
 	var DOMPropertyOperations = __webpack_require__(22);
 	var ReactBrowserComponentMixin = __webpack_require__(79);
 	var ReactComponent = __webpack_require__(25);
-	var ReactBrowserEventEmitter = __webpack_require__(63);
+	var ReactBrowserEventEmitter = __webpack_require__(60);
 	var ReactMount = __webpack_require__(36);
 	var ReactMultiChild = __webpack_require__(37);
 	var ReactPerf = __webpack_require__(38);
@@ -7769,8 +7824,8 @@
 
 	"use strict";
 
-	var DOMProperty = __webpack_require__(57);
-	var ReactBrowserEventEmitter = __webpack_require__(63);
+	var DOMProperty = __webpack_require__(62);
+	var ReactBrowserEventEmitter = __webpack_require__(60);
 	var ReactCurrentOwner = __webpack_require__(28);
 	var ReactElement = __webpack_require__(29);
 	var ReactLegacyElement = __webpack_require__(35);
@@ -8993,7 +9048,7 @@
 	var ReactPropTypeLocationNames = __webpack_require__(73);
 
 	var deprecated = __webpack_require__(43);
-	var emptyFunction = __webpack_require__(49);
+	var emptyFunction = __webpack_require__(48);
 
 	/**
 	 * Collection of methods that allow declaration and validation of props that are
@@ -9772,6 +9827,149 @@
 /* 47 */
 /***/ function(module, exports, __webpack_require__) {
 
+	/**
+	 * Copyright 2013-2014, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 * @typechecks static-only
+	 * @providesModule ReactTransitionChildMapping
+	 */
+
+	"use strict";
+
+	var ReactChildren = __webpack_require__(24);
+
+	var ReactTransitionChildMapping = {
+	  /**
+	   * Given `this.props.children`, return an object mapping key to child. Just
+	   * simple syntactic sugar around ReactChildren.map().
+	   *
+	   * @param {*} children `this.props.children`
+	   * @return {object} Mapping of key to child
+	   */
+	  getChildMapping: function(children) {
+	    return ReactChildren.map(children, function(child) {
+	      return child;
+	    });
+	  },
+
+	  /**
+	   * When you're adding or removing children some may be added or removed in the
+	   * same render pass. We want to show *both* since we want to simultaneously
+	   * animate elements in and out. This function takes a previous set of keys
+	   * and a new set of keys and merges them with its best guess of the correct
+	   * ordering. In the future we may expose some of the utilities in
+	   * ReactMultiChild to make this easy, but for now React itself does not
+	   * directly have this concept of the union of prevChildren and nextChildren
+	   * so we implement it here.
+	   *
+	   * @param {object} prev prev children as returned from
+	   * `ReactTransitionChildMapping.getChildMapping()`.
+	   * @param {object} next next children as returned from
+	   * `ReactTransitionChildMapping.getChildMapping()`.
+	   * @return {object} a key set that contains all keys in `prev` and all keys
+	   * in `next` in a reasonable order.
+	   */
+	  mergeChildMappings: function(prev, next) {
+	    prev = prev || {};
+	    next = next || {};
+
+	    function getValueForKey(key) {
+	      if (next.hasOwnProperty(key)) {
+	        return next[key];
+	      } else {
+	        return prev[key];
+	      }
+	    }
+
+	    // For each key of `next`, the list of keys to insert before that key in
+	    // the combined list
+	    var nextKeysPending = {};
+
+	    var pendingKeys = [];
+	    for (var prevKey in prev) {
+	      if (next.hasOwnProperty(prevKey)) {
+	        if (pendingKeys.length) {
+	          nextKeysPending[prevKey] = pendingKeys;
+	          pendingKeys = [];
+	        }
+	      } else {
+	        pendingKeys.push(prevKey);
+	      }
+	    }
+
+	    var i;
+	    var childMapping = {};
+	    for (var nextKey in next) {
+	      if (nextKeysPending.hasOwnProperty(nextKey)) {
+	        for (i = 0; i < nextKeysPending[nextKey].length; i++) {
+	          var pendingNextKey = nextKeysPending[nextKey][i];
+	          childMapping[nextKeysPending[nextKey][i]] = getValueForKey(
+	            pendingNextKey
+	          );
+	        }
+	      }
+	      childMapping[nextKey] = getValueForKey(nextKey);
+	    }
+
+	    // Finally, add the keys which didn't appear before any key in `next`
+	    for (i = 0; i < pendingKeys.length; i++) {
+	      childMapping[pendingKeys[i]] = getValueForKey(pendingKeys[i]);
+	    }
+
+	    return childMapping;
+	  }
+	};
+
+	module.exports = ReactTransitionChildMapping;
+
+
+/***/ },
+/* 48 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright 2013-2014, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 * @providesModule emptyFunction
+	 */
+
+	function makeEmptyFunction(arg) {
+	  return function() {
+	    return arg;
+	  };
+	}
+
+	/**
+	 * This function accepts and discards inputs; it has no side effects. This is
+	 * primarily useful idiomatically for overridable function endpoints which
+	 * always need to be callable, since JS lacks a null-call idiom ala Cocoa.
+	 */
+	function emptyFunction() {}
+
+	emptyFunction.thatReturns = makeEmptyFunction;
+	emptyFunction.thatReturnsFalse = makeEmptyFunction(false);
+	emptyFunction.thatReturnsTrue = makeEmptyFunction(true);
+	emptyFunction.thatReturnsNull = makeEmptyFunction(null);
+	emptyFunction.thatReturnsThis = function() { return this; };
+	emptyFunction.thatReturnsArgument = function(arg) { return arg; };
+
+	module.exports = emptyFunction;
+
+
+/***/ },
+/* 49 */
+/***/ function(module, exports, __webpack_require__) {
+
 	/* WEBPACK VAR INJECTION */(function(process) {/**
 	 * Copyright 2013-2014, Facebook, Inc.
 	 * All rights reserved.
@@ -9905,149 +10103,6 @@
 	module.exports = ReactCSSTransitionGroupChild;
 	
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
-
-/***/ },
-/* 48 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/**
-	 * Copyright 2013-2014, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 * @typechecks static-only
-	 * @providesModule ReactTransitionChildMapping
-	 */
-
-	"use strict";
-
-	var ReactChildren = __webpack_require__(24);
-
-	var ReactTransitionChildMapping = {
-	  /**
-	   * Given `this.props.children`, return an object mapping key to child. Just
-	   * simple syntactic sugar around ReactChildren.map().
-	   *
-	   * @param {*} children `this.props.children`
-	   * @return {object} Mapping of key to child
-	   */
-	  getChildMapping: function(children) {
-	    return ReactChildren.map(children, function(child) {
-	      return child;
-	    });
-	  },
-
-	  /**
-	   * When you're adding or removing children some may be added or removed in the
-	   * same render pass. We want to show *both* since we want to simultaneously
-	   * animate elements in and out. This function takes a previous set of keys
-	   * and a new set of keys and merges them with its best guess of the correct
-	   * ordering. In the future we may expose some of the utilities in
-	   * ReactMultiChild to make this easy, but for now React itself does not
-	   * directly have this concept of the union of prevChildren and nextChildren
-	   * so we implement it here.
-	   *
-	   * @param {object} prev prev children as returned from
-	   * `ReactTransitionChildMapping.getChildMapping()`.
-	   * @param {object} next next children as returned from
-	   * `ReactTransitionChildMapping.getChildMapping()`.
-	   * @return {object} a key set that contains all keys in `prev` and all keys
-	   * in `next` in a reasonable order.
-	   */
-	  mergeChildMappings: function(prev, next) {
-	    prev = prev || {};
-	    next = next || {};
-
-	    function getValueForKey(key) {
-	      if (next.hasOwnProperty(key)) {
-	        return next[key];
-	      } else {
-	        return prev[key];
-	      }
-	    }
-
-	    // For each key of `next`, the list of keys to insert before that key in
-	    // the combined list
-	    var nextKeysPending = {};
-
-	    var pendingKeys = [];
-	    for (var prevKey in prev) {
-	      if (next.hasOwnProperty(prevKey)) {
-	        if (pendingKeys.length) {
-	          nextKeysPending[prevKey] = pendingKeys;
-	          pendingKeys = [];
-	        }
-	      } else {
-	        pendingKeys.push(prevKey);
-	      }
-	    }
-
-	    var i;
-	    var childMapping = {};
-	    for (var nextKey in next) {
-	      if (nextKeysPending.hasOwnProperty(nextKey)) {
-	        for (i = 0; i < nextKeysPending[nextKey].length; i++) {
-	          var pendingNextKey = nextKeysPending[nextKey][i];
-	          childMapping[nextKeysPending[nextKey][i]] = getValueForKey(
-	            pendingNextKey
-	          );
-	        }
-	      }
-	      childMapping[nextKey] = getValueForKey(nextKey);
-	    }
-
-	    // Finally, add the keys which didn't appear before any key in `next`
-	    for (i = 0; i < pendingKeys.length; i++) {
-	      childMapping[pendingKeys[i]] = getValueForKey(pendingKeys[i]);
-	    }
-
-	    return childMapping;
-	  }
-	};
-
-	module.exports = ReactTransitionChildMapping;
-
-
-/***/ },
-/* 49 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/**
-	 * Copyright 2013-2014, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 * @providesModule emptyFunction
-	 */
-
-	function makeEmptyFunction(arg) {
-	  return function() {
-	    return arg;
-	  };
-	}
-
-	/**
-	 * This function accepts and discards inputs; it has no side effects. This is
-	 * primarily useful idiomatically for overridable function endpoints which
-	 * always need to be callable, since JS lacks a null-call idiom ala Cocoa.
-	 */
-	function emptyFunction() {}
-
-	emptyFunction.thatReturns = makeEmptyFunction;
-	emptyFunction.thatReturnsFalse = makeEmptyFunction(false);
-	emptyFunction.thatReturnsTrue = makeEmptyFunction(true);
-	emptyFunction.thatReturnsNull = makeEmptyFunction(null);
-	emptyFunction.thatReturnsThis = function() { return this; };
-	emptyFunction.thatReturnsArgument = function(arg) { return arg; };
-
-	module.exports = emptyFunction;
-
 
 /***/ },
 /* 50 */
@@ -10592,7 +10647,7 @@
 
 	"use strict";
 
-	var emptyFunction = __webpack_require__(49);
+	var emptyFunction = __webpack_require__(48);
 
 	/**
 	 * Similar to invariant but only logs a warning if the condition is not met.
@@ -10641,7 +10696,7 @@
 	"use strict";
 
 	var assign = __webpack_require__(42);
-	var emptyFunction = __webpack_require__(49);
+	var emptyFunction = __webpack_require__(48);
 	var invariant = __webpack_require__(53);
 	var joinClasses = __webpack_require__(114);
 	var warning = __webpack_require__(54);
@@ -10837,550 +10892,6 @@
 /* 57 */
 /***/ function(module, exports, __webpack_require__) {
 
-	/* WEBPACK VAR INJECTION */(function(process) {/**
-	 * Copyright 2013-2014, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 * @providesModule DOMProperty
-	 * @typechecks static-only
-	 */
-
-	/*jslint bitwise: true */
-
-	"use strict";
-
-	var invariant = __webpack_require__(53);
-
-	function checkMask(value, bitmask) {
-	  return (value & bitmask) === bitmask;
-	}
-
-	var DOMPropertyInjection = {
-	  /**
-	   * Mapping from normalized, camelcased property names to a configuration that
-	   * specifies how the associated DOM property should be accessed or rendered.
-	   */
-	  MUST_USE_ATTRIBUTE: 0x1,
-	  MUST_USE_PROPERTY: 0x2,
-	  HAS_SIDE_EFFECTS: 0x4,
-	  HAS_BOOLEAN_VALUE: 0x8,
-	  HAS_NUMERIC_VALUE: 0x10,
-	  HAS_POSITIVE_NUMERIC_VALUE: 0x20 | 0x10,
-	  HAS_OVERLOADED_BOOLEAN_VALUE: 0x40,
-
-	  /**
-	   * Inject some specialized knowledge about the DOM. This takes a config object
-	   * with the following properties:
-	   *
-	   * isCustomAttribute: function that given an attribute name will return true
-	   * if it can be inserted into the DOM verbatim. Useful for data-* or aria-*
-	   * attributes where it's impossible to enumerate all of the possible
-	   * attribute names,
-	   *
-	   * Properties: object mapping DOM property name to one of the
-	   * DOMPropertyInjection constants or null. If your attribute isn't in here,
-	   * it won't get written to the DOM.
-	   *
-	   * DOMAttributeNames: object mapping React attribute name to the DOM
-	   * attribute name. Attribute names not specified use the **lowercase**
-	   * normalized name.
-	   *
-	   * DOMPropertyNames: similar to DOMAttributeNames but for DOM properties.
-	   * Property names not specified use the normalized name.
-	   *
-	   * DOMMutationMethods: Properties that require special mutation methods. If
-	   * `value` is undefined, the mutation method should unset the property.
-	   *
-	   * @param {object} domPropertyConfig the config as described above.
-	   */
-	  injectDOMPropertyConfig: function(domPropertyConfig) {
-	    var Properties = domPropertyConfig.Properties || {};
-	    var DOMAttributeNames = domPropertyConfig.DOMAttributeNames || {};
-	    var DOMPropertyNames = domPropertyConfig.DOMPropertyNames || {};
-	    var DOMMutationMethods = domPropertyConfig.DOMMutationMethods || {};
-
-	    if (domPropertyConfig.isCustomAttribute) {
-	      DOMProperty._isCustomAttributeFunctions.push(
-	        domPropertyConfig.isCustomAttribute
-	      );
-	    }
-
-	    for (var propName in Properties) {
-	      ("production" !== process.env.NODE_ENV ? invariant(
-	        !DOMProperty.isStandardName.hasOwnProperty(propName),
-	        'injectDOMPropertyConfig(...): You\'re trying to inject DOM property ' +
-	        '\'%s\' which has already been injected. You may be accidentally ' +
-	        'injecting the same DOM property config twice, or you may be ' +
-	        'injecting two configs that have conflicting property names.',
-	        propName
-	      ) : invariant(!DOMProperty.isStandardName.hasOwnProperty(propName)));
-
-	      DOMProperty.isStandardName[propName] = true;
-
-	      var lowerCased = propName.toLowerCase();
-	      DOMProperty.getPossibleStandardName[lowerCased] = propName;
-
-	      if (DOMAttributeNames.hasOwnProperty(propName)) {
-	        var attributeName = DOMAttributeNames[propName];
-	        DOMProperty.getPossibleStandardName[attributeName] = propName;
-	        DOMProperty.getAttributeName[propName] = attributeName;
-	      } else {
-	        DOMProperty.getAttributeName[propName] = lowerCased;
-	      }
-
-	      DOMProperty.getPropertyName[propName] =
-	        DOMPropertyNames.hasOwnProperty(propName) ?
-	          DOMPropertyNames[propName] :
-	          propName;
-
-	      if (DOMMutationMethods.hasOwnProperty(propName)) {
-	        DOMProperty.getMutationMethod[propName] = DOMMutationMethods[propName];
-	      } else {
-	        DOMProperty.getMutationMethod[propName] = null;
-	      }
-
-	      var propConfig = Properties[propName];
-	      DOMProperty.mustUseAttribute[propName] =
-	        checkMask(propConfig, DOMPropertyInjection.MUST_USE_ATTRIBUTE);
-	      DOMProperty.mustUseProperty[propName] =
-	        checkMask(propConfig, DOMPropertyInjection.MUST_USE_PROPERTY);
-	      DOMProperty.hasSideEffects[propName] =
-	        checkMask(propConfig, DOMPropertyInjection.HAS_SIDE_EFFECTS);
-	      DOMProperty.hasBooleanValue[propName] =
-	        checkMask(propConfig, DOMPropertyInjection.HAS_BOOLEAN_VALUE);
-	      DOMProperty.hasNumericValue[propName] =
-	        checkMask(propConfig, DOMPropertyInjection.HAS_NUMERIC_VALUE);
-	      DOMProperty.hasPositiveNumericValue[propName] =
-	        checkMask(propConfig, DOMPropertyInjection.HAS_POSITIVE_NUMERIC_VALUE);
-	      DOMProperty.hasOverloadedBooleanValue[propName] =
-	        checkMask(propConfig, DOMPropertyInjection.HAS_OVERLOADED_BOOLEAN_VALUE);
-
-	      ("production" !== process.env.NODE_ENV ? invariant(
-	        !DOMProperty.mustUseAttribute[propName] ||
-	          !DOMProperty.mustUseProperty[propName],
-	        'DOMProperty: Cannot require using both attribute and property: %s',
-	        propName
-	      ) : invariant(!DOMProperty.mustUseAttribute[propName] ||
-	        !DOMProperty.mustUseProperty[propName]));
-	      ("production" !== process.env.NODE_ENV ? invariant(
-	        DOMProperty.mustUseProperty[propName] ||
-	          !DOMProperty.hasSideEffects[propName],
-	        'DOMProperty: Properties that have side effects must use property: %s',
-	        propName
-	      ) : invariant(DOMProperty.mustUseProperty[propName] ||
-	        !DOMProperty.hasSideEffects[propName]));
-	      ("production" !== process.env.NODE_ENV ? invariant(
-	        !!DOMProperty.hasBooleanValue[propName] +
-	          !!DOMProperty.hasNumericValue[propName] +
-	          !!DOMProperty.hasOverloadedBooleanValue[propName] <= 1,
-	        'DOMProperty: Value can be one of boolean, overloaded boolean, or ' +
-	        'numeric value, but not a combination: %s',
-	        propName
-	      ) : invariant(!!DOMProperty.hasBooleanValue[propName] +
-	        !!DOMProperty.hasNumericValue[propName] +
-	        !!DOMProperty.hasOverloadedBooleanValue[propName] <= 1));
-	    }
-	  }
-	};
-	var defaultValueCache = {};
-
-	/**
-	 * DOMProperty exports lookup objects that can be used like functions:
-	 *
-	 *   > DOMProperty.isValid['id']
-	 *   true
-	 *   > DOMProperty.isValid['foobar']
-	 *   undefined
-	 *
-	 * Although this may be confusing, it performs better in general.
-	 *
-	 * @see http://jsperf.com/key-exists
-	 * @see http://jsperf.com/key-missing
-	 */
-	var DOMProperty = {
-
-	  ID_ATTRIBUTE_NAME: 'data-reactid',
-
-	  /**
-	   * Checks whether a property name is a standard property.
-	   * @type {Object}
-	   */
-	  isStandardName: {},
-
-	  /**
-	   * Mapping from lowercase property names to the properly cased version, used
-	   * to warn in the case of missing properties.
-	   * @type {Object}
-	   */
-	  getPossibleStandardName: {},
-
-	  /**
-	   * Mapping from normalized names to attribute names that differ. Attribute
-	   * names are used when rendering markup or with `*Attribute()`.
-	   * @type {Object}
-	   */
-	  getAttributeName: {},
-
-	  /**
-	   * Mapping from normalized names to properties on DOM node instances.
-	   * (This includes properties that mutate due to external factors.)
-	   * @type {Object}
-	   */
-	  getPropertyName: {},
-
-	  /**
-	   * Mapping from normalized names to mutation methods. This will only exist if
-	   * mutation cannot be set simply by the property or `setAttribute()`.
-	   * @type {Object}
-	   */
-	  getMutationMethod: {},
-
-	  /**
-	   * Whether the property must be accessed and mutated as an object property.
-	   * @type {Object}
-	   */
-	  mustUseAttribute: {},
-
-	  /**
-	   * Whether the property must be accessed and mutated using `*Attribute()`.
-	   * (This includes anything that fails `<propName> in <element>`.)
-	   * @type {Object}
-	   */
-	  mustUseProperty: {},
-
-	  /**
-	   * Whether or not setting a value causes side effects such as triggering
-	   * resources to be loaded or text selection changes. We must ensure that
-	   * the value is only set if it has changed.
-	   * @type {Object}
-	   */
-	  hasSideEffects: {},
-
-	  /**
-	   * Whether the property should be removed when set to a falsey value.
-	   * @type {Object}
-	   */
-	  hasBooleanValue: {},
-
-	  /**
-	   * Whether the property must be numeric or parse as a
-	   * numeric and should be removed when set to a falsey value.
-	   * @type {Object}
-	   */
-	  hasNumericValue: {},
-
-	  /**
-	   * Whether the property must be positive numeric or parse as a positive
-	   * numeric and should be removed when set to a falsey value.
-	   * @type {Object}
-	   */
-	  hasPositiveNumericValue: {},
-
-	  /**
-	   * Whether the property can be used as a flag as well as with a value. Removed
-	   * when strictly equal to false; present without a value when strictly equal
-	   * to true; present with a value otherwise.
-	   * @type {Object}
-	   */
-	  hasOverloadedBooleanValue: {},
-
-	  /**
-	   * All of the isCustomAttribute() functions that have been injected.
-	   */
-	  _isCustomAttributeFunctions: [],
-
-	  /**
-	   * Checks whether a property name is a custom attribute.
-	   * @method
-	   */
-	  isCustomAttribute: function(attributeName) {
-	    for (var i = 0; i < DOMProperty._isCustomAttributeFunctions.length; i++) {
-	      var isCustomAttributeFn = DOMProperty._isCustomAttributeFunctions[i];
-	      if (isCustomAttributeFn(attributeName)) {
-	        return true;
-	      }
-	    }
-	    return false;
-	  },
-
-	  /**
-	   * Returns the default property value for a DOM property (i.e., not an
-	   * attribute). Most default values are '' or false, but not all. Worse yet,
-	   * some (in particular, `type`) vary depending on the type of element.
-	   *
-	   * TODO: Is it better to grab all the possible properties when creating an
-	   * element to avoid having to create the same element twice?
-	   */
-	  getDefaultValueForProperty: function(nodeName, prop) {
-	    var nodeDefaults = defaultValueCache[nodeName];
-	    var testElement;
-	    if (!nodeDefaults) {
-	      defaultValueCache[nodeName] = nodeDefaults = {};
-	    }
-	    if (!(prop in nodeDefaults)) {
-	      testElement = document.createElement(nodeName);
-	      nodeDefaults[prop] = testElement[prop];
-	    }
-	    return nodeDefaults[prop];
-	  },
-
-	  injection: DOMPropertyInjection
-	};
-
-	module.exports = DOMProperty;
-	
-	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
-
-/***/ },
-/* 58 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/**
-	 * Copyright 2013-2014, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 * @providesModule ReactDefaultPerfAnalysis
-	 */
-
-	var assign = __webpack_require__(42);
-
-	// Don't try to save users less than 1.2ms (a number I made up)
-	var DONT_CARE_THRESHOLD = 1.2;
-	var DOM_OPERATION_TYPES = {
-	  'mountImageIntoNode': 'set innerHTML',
-	  INSERT_MARKUP: 'set innerHTML',
-	  MOVE_EXISTING: 'move',
-	  REMOVE_NODE: 'remove',
-	  TEXT_CONTENT: 'set textContent',
-	  'updatePropertyByID': 'update attribute',
-	  'deletePropertyByID': 'delete attribute',
-	  'updateStylesByID': 'update styles',
-	  'updateInnerHTMLByID': 'set innerHTML',
-	  'dangerouslyReplaceNodeWithMarkupByID': 'replace'
-	};
-
-	function getTotalTime(measurements) {
-	  // TODO: return number of DOM ops? could be misleading.
-	  // TODO: measure dropped frames after reconcile?
-	  // TODO: log total time of each reconcile and the top-level component
-	  // class that triggered it.
-	  var totalTime = 0;
-	  for (var i = 0; i < measurements.length; i++) {
-	    var measurement = measurements[i];
-	    totalTime += measurement.totalTime;
-	  }
-	  return totalTime;
-	}
-
-	function getDOMSummary(measurements) {
-	  var items = [];
-	  for (var i = 0; i < measurements.length; i++) {
-	    var measurement = measurements[i];
-	    var id;
-
-	    for (id in measurement.writes) {
-	      measurement.writes[id].forEach(function(write) {
-	        items.push({
-	          id: id,
-	          type: DOM_OPERATION_TYPES[write.type] || write.type,
-	          args: write.args
-	        });
-	      });
-	    }
-	  }
-	  return items;
-	}
-
-	function getExclusiveSummary(measurements) {
-	  var candidates = {};
-	  var displayName;
-
-	  for (var i = 0; i < measurements.length; i++) {
-	    var measurement = measurements[i];
-	    var allIDs = assign(
-	      {},
-	      measurement.exclusive,
-	      measurement.inclusive
-	    );
-
-	    for (var id in allIDs) {
-	      displayName = measurement.displayNames[id].current;
-
-	      candidates[displayName] = candidates[displayName] || {
-	        componentName: displayName,
-	        inclusive: 0,
-	        exclusive: 0,
-	        render: 0,
-	        count: 0
-	      };
-	      if (measurement.render[id]) {
-	        candidates[displayName].render += measurement.render[id];
-	      }
-	      if (measurement.exclusive[id]) {
-	        candidates[displayName].exclusive += measurement.exclusive[id];
-	      }
-	      if (measurement.inclusive[id]) {
-	        candidates[displayName].inclusive += measurement.inclusive[id];
-	      }
-	      if (measurement.counts[id]) {
-	        candidates[displayName].count += measurement.counts[id];
-	      }
-	    }
-	  }
-
-	  // Now make a sorted array with the results.
-	  var arr = [];
-	  for (displayName in candidates) {
-	    if (candidates[displayName].exclusive >= DONT_CARE_THRESHOLD) {
-	      arr.push(candidates[displayName]);
-	    }
-	  }
-
-	  arr.sort(function(a, b) {
-	    return b.exclusive - a.exclusive;
-	  });
-
-	  return arr;
-	}
-
-	function getInclusiveSummary(measurements, onlyClean) {
-	  var candidates = {};
-	  var inclusiveKey;
-
-	  for (var i = 0; i < measurements.length; i++) {
-	    var measurement = measurements[i];
-	    var allIDs = assign(
-	      {},
-	      measurement.exclusive,
-	      measurement.inclusive
-	    );
-	    var cleanComponents;
-
-	    if (onlyClean) {
-	      cleanComponents = getUnchangedComponents(measurement);
-	    }
-
-	    for (var id in allIDs) {
-	      if (onlyClean && !cleanComponents[id]) {
-	        continue;
-	      }
-
-	      var displayName = measurement.displayNames[id];
-
-	      // Inclusive time is not useful for many components without knowing where
-	      // they are instantiated. So we aggregate inclusive time with both the
-	      // owner and current displayName as the key.
-	      inclusiveKey = displayName.owner + ' > ' + displayName.current;
-
-	      candidates[inclusiveKey] = candidates[inclusiveKey] || {
-	        componentName: inclusiveKey,
-	        time: 0,
-	        count: 0
-	      };
-
-	      if (measurement.inclusive[id]) {
-	        candidates[inclusiveKey].time += measurement.inclusive[id];
-	      }
-	      if (measurement.counts[id]) {
-	        candidates[inclusiveKey].count += measurement.counts[id];
-	      }
-	    }
-	  }
-
-	  // Now make a sorted array with the results.
-	  var arr = [];
-	  for (inclusiveKey in candidates) {
-	    if (candidates[inclusiveKey].time >= DONT_CARE_THRESHOLD) {
-	      arr.push(candidates[inclusiveKey]);
-	    }
-	  }
-
-	  arr.sort(function(a, b) {
-	    return b.time - a.time;
-	  });
-
-	  return arr;
-	}
-
-	function getUnchangedComponents(measurement) {
-	  // For a given reconcile, look at which components did not actually
-	  // render anything to the DOM and return a mapping of their ID to
-	  // the amount of time it took to render the entire subtree.
-	  var cleanComponents = {};
-	  var dirtyLeafIDs = Object.keys(measurement.writes);
-	  var allIDs = assign({}, measurement.exclusive, measurement.inclusive);
-
-	  for (var id in allIDs) {
-	    var isDirty = false;
-	    // For each component that rendered, see if a component that triggered
-	    // a DOM op is in its subtree.
-	    for (var i = 0; i < dirtyLeafIDs.length; i++) {
-	      if (dirtyLeafIDs[i].indexOf(id) === 0) {
-	        isDirty = true;
-	        break;
-	      }
-	    }
-	    if (!isDirty && measurement.counts[id] > 0) {
-	      cleanComponents[id] = true;
-	    }
-	  }
-	  return cleanComponents;
-	}
-
-	var ReactDefaultPerfAnalysis = {
-	  getExclusiveSummary: getExclusiveSummary,
-	  getInclusiveSummary: getInclusiveSummary,
-	  getDOMSummary: getDOMSummary,
-	  getTotalTime: getTotalTime
-	};
-
-	module.exports = ReactDefaultPerfAnalysis;
-
-
-/***/ },
-/* 59 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/**
-	 * Copyright 2013-2014, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 * @providesModule performanceNow
-	 * @typechecks
-	 */
-
-	var performance = __webpack_require__(115);
-
-	/**
-	 * Detect if we can use `window.performance.now()` and gracefully fallback to
-	 * `Date.now()` if it doesn't exist. We need to support Firefox < 15 for now
-	 * because of Facebook's testing infrastructure.
-	 */
-	if (!performance || !performance.now) {
-	  performance = Date;
-	}
-
-	var performanceNow = performance.now.bind(performance);
-
-	module.exports = performanceNow;
-
-
-/***/ },
-/* 60 */
-/***/ function(module, exports, __webpack_require__) {
-
 	/**
 	 * Copyright 2013-2014, Facebook, Inc.
 	 * All rights reserved.
@@ -11454,7 +10965,7 @@
 
 
 /***/ },
-/* 61 */
+/* 58 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -11470,11 +10981,11 @@
 
 	"use strict";
 
-	var EventPluginRegistry = __webpack_require__(116);
+	var EventPluginRegistry = __webpack_require__(115);
 	var EventPluginUtils = __webpack_require__(23);
 
-	var accumulateInto = __webpack_require__(117);
-	var forEachAccumulated = __webpack_require__(118);
+	var accumulateInto = __webpack_require__(116);
+	var forEachAccumulated = __webpack_require__(117);
 	var invariant = __webpack_require__(53);
 
 	/**
@@ -11733,7 +11244,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 62 */
+/* 59 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -11749,11 +11260,11 @@
 
 	"use strict";
 
-	var EventConstants = __webpack_require__(60);
-	var EventPluginHub = __webpack_require__(61);
+	var EventConstants = __webpack_require__(57);
+	var EventPluginHub = __webpack_require__(58);
 
-	var accumulateInto = __webpack_require__(117);
-	var forEachAccumulated = __webpack_require__(118);
+	var accumulateInto = __webpack_require__(116);
+	var forEachAccumulated = __webpack_require__(117);
 
 	var PropagationPhases = EventConstants.PropagationPhases;
 	var getListener = EventPluginHub.getListener;
@@ -11878,7 +11389,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 63 */
+/* 60 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -11895,11 +11406,11 @@
 
 	"use strict";
 
-	var EventConstants = __webpack_require__(60);
-	var EventPluginHub = __webpack_require__(61);
-	var EventPluginRegistry = __webpack_require__(116);
-	var ReactEventEmitterMixin = __webpack_require__(119);
-	var ViewportMetrics = __webpack_require__(120);
+	var EventConstants = __webpack_require__(57);
+	var EventPluginHub = __webpack_require__(58);
+	var EventPluginRegistry = __webpack_require__(115);
+	var ReactEventEmitterMixin = __webpack_require__(118);
+	var ViewportMetrics = __webpack_require__(119);
 
 	var assign = __webpack_require__(42);
 	var isEventSupported = __webpack_require__(80);
@@ -12237,7 +11748,7 @@
 
 
 /***/ },
-/* 64 */
+/* 61 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -12257,8 +11768,8 @@
 	var PooledClass = __webpack_require__(51);
 
 	var assign = __webpack_require__(42);
-	var emptyFunction = __webpack_require__(49);
-	var getEventTarget = __webpack_require__(121);
+	var emptyFunction = __webpack_require__(48);
+	var getEventTarget = __webpack_require__(120);
 
 	/**
 	 * @interface Event
@@ -12396,6 +11907,550 @@
 	PooledClass.addPoolingTo(SyntheticEvent, PooledClass.threeArgumentPooler);
 
 	module.exports = SyntheticEvent;
+
+
+/***/ },
+/* 62 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/* WEBPACK VAR INJECTION */(function(process) {/**
+	 * Copyright 2013-2014, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 * @providesModule DOMProperty
+	 * @typechecks static-only
+	 */
+
+	/*jslint bitwise: true */
+
+	"use strict";
+
+	var invariant = __webpack_require__(53);
+
+	function checkMask(value, bitmask) {
+	  return (value & bitmask) === bitmask;
+	}
+
+	var DOMPropertyInjection = {
+	  /**
+	   * Mapping from normalized, camelcased property names to a configuration that
+	   * specifies how the associated DOM property should be accessed or rendered.
+	   */
+	  MUST_USE_ATTRIBUTE: 0x1,
+	  MUST_USE_PROPERTY: 0x2,
+	  HAS_SIDE_EFFECTS: 0x4,
+	  HAS_BOOLEAN_VALUE: 0x8,
+	  HAS_NUMERIC_VALUE: 0x10,
+	  HAS_POSITIVE_NUMERIC_VALUE: 0x20 | 0x10,
+	  HAS_OVERLOADED_BOOLEAN_VALUE: 0x40,
+
+	  /**
+	   * Inject some specialized knowledge about the DOM. This takes a config object
+	   * with the following properties:
+	   *
+	   * isCustomAttribute: function that given an attribute name will return true
+	   * if it can be inserted into the DOM verbatim. Useful for data-* or aria-*
+	   * attributes where it's impossible to enumerate all of the possible
+	   * attribute names,
+	   *
+	   * Properties: object mapping DOM property name to one of the
+	   * DOMPropertyInjection constants or null. If your attribute isn't in here,
+	   * it won't get written to the DOM.
+	   *
+	   * DOMAttributeNames: object mapping React attribute name to the DOM
+	   * attribute name. Attribute names not specified use the **lowercase**
+	   * normalized name.
+	   *
+	   * DOMPropertyNames: similar to DOMAttributeNames but for DOM properties.
+	   * Property names not specified use the normalized name.
+	   *
+	   * DOMMutationMethods: Properties that require special mutation methods. If
+	   * `value` is undefined, the mutation method should unset the property.
+	   *
+	   * @param {object} domPropertyConfig the config as described above.
+	   */
+	  injectDOMPropertyConfig: function(domPropertyConfig) {
+	    var Properties = domPropertyConfig.Properties || {};
+	    var DOMAttributeNames = domPropertyConfig.DOMAttributeNames || {};
+	    var DOMPropertyNames = domPropertyConfig.DOMPropertyNames || {};
+	    var DOMMutationMethods = domPropertyConfig.DOMMutationMethods || {};
+
+	    if (domPropertyConfig.isCustomAttribute) {
+	      DOMProperty._isCustomAttributeFunctions.push(
+	        domPropertyConfig.isCustomAttribute
+	      );
+	    }
+
+	    for (var propName in Properties) {
+	      ("production" !== process.env.NODE_ENV ? invariant(
+	        !DOMProperty.isStandardName.hasOwnProperty(propName),
+	        'injectDOMPropertyConfig(...): You\'re trying to inject DOM property ' +
+	        '\'%s\' which has already been injected. You may be accidentally ' +
+	        'injecting the same DOM property config twice, or you may be ' +
+	        'injecting two configs that have conflicting property names.',
+	        propName
+	      ) : invariant(!DOMProperty.isStandardName.hasOwnProperty(propName)));
+
+	      DOMProperty.isStandardName[propName] = true;
+
+	      var lowerCased = propName.toLowerCase();
+	      DOMProperty.getPossibleStandardName[lowerCased] = propName;
+
+	      if (DOMAttributeNames.hasOwnProperty(propName)) {
+	        var attributeName = DOMAttributeNames[propName];
+	        DOMProperty.getPossibleStandardName[attributeName] = propName;
+	        DOMProperty.getAttributeName[propName] = attributeName;
+	      } else {
+	        DOMProperty.getAttributeName[propName] = lowerCased;
+	      }
+
+	      DOMProperty.getPropertyName[propName] =
+	        DOMPropertyNames.hasOwnProperty(propName) ?
+	          DOMPropertyNames[propName] :
+	          propName;
+
+	      if (DOMMutationMethods.hasOwnProperty(propName)) {
+	        DOMProperty.getMutationMethod[propName] = DOMMutationMethods[propName];
+	      } else {
+	        DOMProperty.getMutationMethod[propName] = null;
+	      }
+
+	      var propConfig = Properties[propName];
+	      DOMProperty.mustUseAttribute[propName] =
+	        checkMask(propConfig, DOMPropertyInjection.MUST_USE_ATTRIBUTE);
+	      DOMProperty.mustUseProperty[propName] =
+	        checkMask(propConfig, DOMPropertyInjection.MUST_USE_PROPERTY);
+	      DOMProperty.hasSideEffects[propName] =
+	        checkMask(propConfig, DOMPropertyInjection.HAS_SIDE_EFFECTS);
+	      DOMProperty.hasBooleanValue[propName] =
+	        checkMask(propConfig, DOMPropertyInjection.HAS_BOOLEAN_VALUE);
+	      DOMProperty.hasNumericValue[propName] =
+	        checkMask(propConfig, DOMPropertyInjection.HAS_NUMERIC_VALUE);
+	      DOMProperty.hasPositiveNumericValue[propName] =
+	        checkMask(propConfig, DOMPropertyInjection.HAS_POSITIVE_NUMERIC_VALUE);
+	      DOMProperty.hasOverloadedBooleanValue[propName] =
+	        checkMask(propConfig, DOMPropertyInjection.HAS_OVERLOADED_BOOLEAN_VALUE);
+
+	      ("production" !== process.env.NODE_ENV ? invariant(
+	        !DOMProperty.mustUseAttribute[propName] ||
+	          !DOMProperty.mustUseProperty[propName],
+	        'DOMProperty: Cannot require using both attribute and property: %s',
+	        propName
+	      ) : invariant(!DOMProperty.mustUseAttribute[propName] ||
+	        !DOMProperty.mustUseProperty[propName]));
+	      ("production" !== process.env.NODE_ENV ? invariant(
+	        DOMProperty.mustUseProperty[propName] ||
+	          !DOMProperty.hasSideEffects[propName],
+	        'DOMProperty: Properties that have side effects must use property: %s',
+	        propName
+	      ) : invariant(DOMProperty.mustUseProperty[propName] ||
+	        !DOMProperty.hasSideEffects[propName]));
+	      ("production" !== process.env.NODE_ENV ? invariant(
+	        !!DOMProperty.hasBooleanValue[propName] +
+	          !!DOMProperty.hasNumericValue[propName] +
+	          !!DOMProperty.hasOverloadedBooleanValue[propName] <= 1,
+	        'DOMProperty: Value can be one of boolean, overloaded boolean, or ' +
+	        'numeric value, but not a combination: %s',
+	        propName
+	      ) : invariant(!!DOMProperty.hasBooleanValue[propName] +
+	        !!DOMProperty.hasNumericValue[propName] +
+	        !!DOMProperty.hasOverloadedBooleanValue[propName] <= 1));
+	    }
+	  }
+	};
+	var defaultValueCache = {};
+
+	/**
+	 * DOMProperty exports lookup objects that can be used like functions:
+	 *
+	 *   > DOMProperty.isValid['id']
+	 *   true
+	 *   > DOMProperty.isValid['foobar']
+	 *   undefined
+	 *
+	 * Although this may be confusing, it performs better in general.
+	 *
+	 * @see http://jsperf.com/key-exists
+	 * @see http://jsperf.com/key-missing
+	 */
+	var DOMProperty = {
+
+	  ID_ATTRIBUTE_NAME: 'data-reactid',
+
+	  /**
+	   * Checks whether a property name is a standard property.
+	   * @type {Object}
+	   */
+	  isStandardName: {},
+
+	  /**
+	   * Mapping from lowercase property names to the properly cased version, used
+	   * to warn in the case of missing properties.
+	   * @type {Object}
+	   */
+	  getPossibleStandardName: {},
+
+	  /**
+	   * Mapping from normalized names to attribute names that differ. Attribute
+	   * names are used when rendering markup or with `*Attribute()`.
+	   * @type {Object}
+	   */
+	  getAttributeName: {},
+
+	  /**
+	   * Mapping from normalized names to properties on DOM node instances.
+	   * (This includes properties that mutate due to external factors.)
+	   * @type {Object}
+	   */
+	  getPropertyName: {},
+
+	  /**
+	   * Mapping from normalized names to mutation methods. This will only exist if
+	   * mutation cannot be set simply by the property or `setAttribute()`.
+	   * @type {Object}
+	   */
+	  getMutationMethod: {},
+
+	  /**
+	   * Whether the property must be accessed and mutated as an object property.
+	   * @type {Object}
+	   */
+	  mustUseAttribute: {},
+
+	  /**
+	   * Whether the property must be accessed and mutated using `*Attribute()`.
+	   * (This includes anything that fails `<propName> in <element>`.)
+	   * @type {Object}
+	   */
+	  mustUseProperty: {},
+
+	  /**
+	   * Whether or not setting a value causes side effects such as triggering
+	   * resources to be loaded or text selection changes. We must ensure that
+	   * the value is only set if it has changed.
+	   * @type {Object}
+	   */
+	  hasSideEffects: {},
+
+	  /**
+	   * Whether the property should be removed when set to a falsey value.
+	   * @type {Object}
+	   */
+	  hasBooleanValue: {},
+
+	  /**
+	   * Whether the property must be numeric or parse as a
+	   * numeric and should be removed when set to a falsey value.
+	   * @type {Object}
+	   */
+	  hasNumericValue: {},
+
+	  /**
+	   * Whether the property must be positive numeric or parse as a positive
+	   * numeric and should be removed when set to a falsey value.
+	   * @type {Object}
+	   */
+	  hasPositiveNumericValue: {},
+
+	  /**
+	   * Whether the property can be used as a flag as well as with a value. Removed
+	   * when strictly equal to false; present without a value when strictly equal
+	   * to true; present with a value otherwise.
+	   * @type {Object}
+	   */
+	  hasOverloadedBooleanValue: {},
+
+	  /**
+	   * All of the isCustomAttribute() functions that have been injected.
+	   */
+	  _isCustomAttributeFunctions: [],
+
+	  /**
+	   * Checks whether a property name is a custom attribute.
+	   * @method
+	   */
+	  isCustomAttribute: function(attributeName) {
+	    for (var i = 0; i < DOMProperty._isCustomAttributeFunctions.length; i++) {
+	      var isCustomAttributeFn = DOMProperty._isCustomAttributeFunctions[i];
+	      if (isCustomAttributeFn(attributeName)) {
+	        return true;
+	      }
+	    }
+	    return false;
+	  },
+
+	  /**
+	   * Returns the default property value for a DOM property (i.e., not an
+	   * attribute). Most default values are '' or false, but not all. Worse yet,
+	   * some (in particular, `type`) vary depending on the type of element.
+	   *
+	   * TODO: Is it better to grab all the possible properties when creating an
+	   * element to avoid having to create the same element twice?
+	   */
+	  getDefaultValueForProperty: function(nodeName, prop) {
+	    var nodeDefaults = defaultValueCache[nodeName];
+	    var testElement;
+	    if (!nodeDefaults) {
+	      defaultValueCache[nodeName] = nodeDefaults = {};
+	    }
+	    if (!(prop in nodeDefaults)) {
+	      testElement = document.createElement(nodeName);
+	      nodeDefaults[prop] = testElement[prop];
+	    }
+	    return nodeDefaults[prop];
+	  },
+
+	  injection: DOMPropertyInjection
+	};
+
+	module.exports = DOMProperty;
+	
+	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
+
+/***/ },
+/* 63 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright 2013-2014, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 * @providesModule ReactDefaultPerfAnalysis
+	 */
+
+	var assign = __webpack_require__(42);
+
+	// Don't try to save users less than 1.2ms (a number I made up)
+	var DONT_CARE_THRESHOLD = 1.2;
+	var DOM_OPERATION_TYPES = {
+	  'mountImageIntoNode': 'set innerHTML',
+	  INSERT_MARKUP: 'set innerHTML',
+	  MOVE_EXISTING: 'move',
+	  REMOVE_NODE: 'remove',
+	  TEXT_CONTENT: 'set textContent',
+	  'updatePropertyByID': 'update attribute',
+	  'deletePropertyByID': 'delete attribute',
+	  'updateStylesByID': 'update styles',
+	  'updateInnerHTMLByID': 'set innerHTML',
+	  'dangerouslyReplaceNodeWithMarkupByID': 'replace'
+	};
+
+	function getTotalTime(measurements) {
+	  // TODO: return number of DOM ops? could be misleading.
+	  // TODO: measure dropped frames after reconcile?
+	  // TODO: log total time of each reconcile and the top-level component
+	  // class that triggered it.
+	  var totalTime = 0;
+	  for (var i = 0; i < measurements.length; i++) {
+	    var measurement = measurements[i];
+	    totalTime += measurement.totalTime;
+	  }
+	  return totalTime;
+	}
+
+	function getDOMSummary(measurements) {
+	  var items = [];
+	  for (var i = 0; i < measurements.length; i++) {
+	    var measurement = measurements[i];
+	    var id;
+
+	    for (id in measurement.writes) {
+	      measurement.writes[id].forEach(function(write) {
+	        items.push({
+	          id: id,
+	          type: DOM_OPERATION_TYPES[write.type] || write.type,
+	          args: write.args
+	        });
+	      });
+	    }
+	  }
+	  return items;
+	}
+
+	function getExclusiveSummary(measurements) {
+	  var candidates = {};
+	  var displayName;
+
+	  for (var i = 0; i < measurements.length; i++) {
+	    var measurement = measurements[i];
+	    var allIDs = assign(
+	      {},
+	      measurement.exclusive,
+	      measurement.inclusive
+	    );
+
+	    for (var id in allIDs) {
+	      displayName = measurement.displayNames[id].current;
+
+	      candidates[displayName] = candidates[displayName] || {
+	        componentName: displayName,
+	        inclusive: 0,
+	        exclusive: 0,
+	        render: 0,
+	        count: 0
+	      };
+	      if (measurement.render[id]) {
+	        candidates[displayName].render += measurement.render[id];
+	      }
+	      if (measurement.exclusive[id]) {
+	        candidates[displayName].exclusive += measurement.exclusive[id];
+	      }
+	      if (measurement.inclusive[id]) {
+	        candidates[displayName].inclusive += measurement.inclusive[id];
+	      }
+	      if (measurement.counts[id]) {
+	        candidates[displayName].count += measurement.counts[id];
+	      }
+	    }
+	  }
+
+	  // Now make a sorted array with the results.
+	  var arr = [];
+	  for (displayName in candidates) {
+	    if (candidates[displayName].exclusive >= DONT_CARE_THRESHOLD) {
+	      arr.push(candidates[displayName]);
+	    }
+	  }
+
+	  arr.sort(function(a, b) {
+	    return b.exclusive - a.exclusive;
+	  });
+
+	  return arr;
+	}
+
+	function getInclusiveSummary(measurements, onlyClean) {
+	  var candidates = {};
+	  var inclusiveKey;
+
+	  for (var i = 0; i < measurements.length; i++) {
+	    var measurement = measurements[i];
+	    var allIDs = assign(
+	      {},
+	      measurement.exclusive,
+	      measurement.inclusive
+	    );
+	    var cleanComponents;
+
+	    if (onlyClean) {
+	      cleanComponents = getUnchangedComponents(measurement);
+	    }
+
+	    for (var id in allIDs) {
+	      if (onlyClean && !cleanComponents[id]) {
+	        continue;
+	      }
+
+	      var displayName = measurement.displayNames[id];
+
+	      // Inclusive time is not useful for many components without knowing where
+	      // they are instantiated. So we aggregate inclusive time with both the
+	      // owner and current displayName as the key.
+	      inclusiveKey = displayName.owner + ' > ' + displayName.current;
+
+	      candidates[inclusiveKey] = candidates[inclusiveKey] || {
+	        componentName: inclusiveKey,
+	        time: 0,
+	        count: 0
+	      };
+
+	      if (measurement.inclusive[id]) {
+	        candidates[inclusiveKey].time += measurement.inclusive[id];
+	      }
+	      if (measurement.counts[id]) {
+	        candidates[inclusiveKey].count += measurement.counts[id];
+	      }
+	    }
+	  }
+
+	  // Now make a sorted array with the results.
+	  var arr = [];
+	  for (inclusiveKey in candidates) {
+	    if (candidates[inclusiveKey].time >= DONT_CARE_THRESHOLD) {
+	      arr.push(candidates[inclusiveKey]);
+	    }
+	  }
+
+	  arr.sort(function(a, b) {
+	    return b.time - a.time;
+	  });
+
+	  return arr;
+	}
+
+	function getUnchangedComponents(measurement) {
+	  // For a given reconcile, look at which components did not actually
+	  // render anything to the DOM and return a mapping of their ID to
+	  // the amount of time it took to render the entire subtree.
+	  var cleanComponents = {};
+	  var dirtyLeafIDs = Object.keys(measurement.writes);
+	  var allIDs = assign({}, measurement.exclusive, measurement.inclusive);
+
+	  for (var id in allIDs) {
+	    var isDirty = false;
+	    // For each component that rendered, see if a component that triggered
+	    // a DOM op is in its subtree.
+	    for (var i = 0; i < dirtyLeafIDs.length; i++) {
+	      if (dirtyLeafIDs[i].indexOf(id) === 0) {
+	        isDirty = true;
+	        break;
+	      }
+	    }
+	    if (!isDirty && measurement.counts[id] > 0) {
+	      cleanComponents[id] = true;
+	    }
+	  }
+	  return cleanComponents;
+	}
+
+	var ReactDefaultPerfAnalysis = {
+	  getExclusiveSummary: getExclusiveSummary,
+	  getInclusiveSummary: getInclusiveSummary,
+	  getDOMSummary: getDOMSummary,
+	  getTotalTime: getTotalTime
+	};
+
+	module.exports = ReactDefaultPerfAnalysis;
+
+
+/***/ },
+/* 64 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright 2013-2014, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 * @providesModule performanceNow
+	 * @typechecks
+	 */
+
+	var performance = __webpack_require__(121);
+
+	/**
+	 * Detect if we can use `window.performance.now()` and gracefully fallback to
+	 * `Date.now()` if it doesn't exist. We need to support Firefox < 15 for now
+	 * because of Facebook's testing infrastructure.
+	 */
+	if (!performance || !performance.now) {
+	  performance = Date;
+	}
+
+	var performanceNow = performance.now.bind(performance);
+
+	module.exports = performanceNow;
 
 
 /***/ },
@@ -13583,8 +13638,8 @@
 
 	"use strict";
 
-	var EventConstants = __webpack_require__(60);
-	var EventPropagators = __webpack_require__(62);
+	var EventConstants = __webpack_require__(57);
+	var EventPropagators = __webpack_require__(59);
 	var ExecutionEnvironment = __webpack_require__(45);
 	var SyntheticInputEvent = __webpack_require__(128);
 
@@ -13808,12 +13863,12 @@
 
 	"use strict";
 
-	var EventConstants = __webpack_require__(60);
-	var EventPluginHub = __webpack_require__(61);
-	var EventPropagators = __webpack_require__(62);
+	var EventConstants = __webpack_require__(57);
+	var EventPluginHub = __webpack_require__(58);
+	var EventPropagators = __webpack_require__(59);
 	var ExecutionEnvironment = __webpack_require__(45);
 	var ReactUpdates = __webpack_require__(13);
-	var SyntheticEvent = __webpack_require__(64);
+	var SyntheticEvent = __webpack_require__(61);
 
 	var isEventSupported = __webpack_require__(80);
 	var isTextInputElement = __webpack_require__(129);
@@ -14224,8 +14279,8 @@
 
 	"use strict";
 
-	var EventConstants = __webpack_require__(60);
-	var EventPropagators = __webpack_require__(62);
+	var EventConstants = __webpack_require__(57);
+	var EventPropagators = __webpack_require__(59);
 	var ExecutionEnvironment = __webpack_require__(45);
 	var ReactInputSelection = __webpack_require__(130);
 	var SyntheticCompositionEvent = __webpack_require__(131);
@@ -14531,8 +14586,8 @@
 
 	"use strict";
 
-	var EventConstants = __webpack_require__(60);
-	var EventPropagators = __webpack_require__(62);
+	var EventConstants = __webpack_require__(57);
+	var EventPropagators = __webpack_require__(59);
 	var SyntheticMouseEvent = __webpack_require__(133);
 
 	var ReactMount = __webpack_require__(36);
@@ -14676,7 +14731,7 @@
 
 	"use strict";
 
-	var DOMProperty = __webpack_require__(57);
+	var DOMProperty = __webpack_require__(62);
 	var ExecutionEnvironment = __webpack_require__(45);
 
 	var MUST_USE_ATTRIBUTE = DOMProperty.injection.MUST_USE_ATTRIBUTE;
@@ -14871,9 +14926,9 @@
 
 	"use strict";
 
-	var EventConstants = __webpack_require__(60);
+	var EventConstants = __webpack_require__(57);
 
-	var emptyFunction = __webpack_require__(49);
+	var emptyFunction = __webpack_require__(48);
 
 	var topLevelTypes = EventConstants.topLevelTypes;
 
@@ -15061,7 +15116,7 @@
 	var Transaction = __webpack_require__(52);
 
 	var assign = __webpack_require__(42);
-	var emptyFunction = __webpack_require__(49);
+	var emptyFunction = __webpack_require__(48);
 
 	var RESET_BATCHED_UPDATES = {
 	  initialize: emptyFunction,
@@ -15203,7 +15258,7 @@
 
 	"use strict";
 
-	var EventConstants = __webpack_require__(60);
+	var EventConstants = __webpack_require__(57);
 	var LocalEventTrapMixin = __webpack_require__(138);
 	var ReactBrowserComponentMixin = __webpack_require__(79);
 	var ReactCompositeComponent = __webpack_require__(26);
@@ -15257,7 +15312,7 @@
 
 	"use strict";
 
-	var EventConstants = __webpack_require__(60);
+	var EventConstants = __webpack_require__(57);
 	var LocalEventTrapMixin = __webpack_require__(138);
 	var ReactBrowserComponentMixin = __webpack_require__(79);
 	var ReactCompositeComponent = __webpack_require__(26);
@@ -15887,7 +15942,7 @@
 	var ReactUpdates = __webpack_require__(13);
 
 	var assign = __webpack_require__(42);
-	var getEventTarget = __webpack_require__(121);
+	var getEventTarget = __webpack_require__(120);
 	var getUnboundedScrollPosition = __webpack_require__(141);
 
 	/**
@@ -16066,12 +16121,12 @@
 
 	"use strict";
 
-	var DOMProperty = __webpack_require__(57);
-	var EventPluginHub = __webpack_require__(61);
+	var DOMProperty = __webpack_require__(62);
+	var EventPluginHub = __webpack_require__(58);
 	var ReactComponent = __webpack_require__(25);
 	var ReactCompositeComponent = __webpack_require__(26);
 	var ReactEmptyComponent = __webpack_require__(70);
-	var ReactBrowserEventEmitter = __webpack_require__(63);
+	var ReactBrowserEventEmitter = __webpack_require__(60);
 	var ReactNativeComponent = __webpack_require__(123);
 	var ReactPerf = __webpack_require__(38);
 	var ReactRootIndex = __webpack_require__(105);
@@ -16110,10 +16165,10 @@
 
 	"use strict";
 
-	var EventConstants = __webpack_require__(60);
-	var EventPropagators = __webpack_require__(62);
+	var EventConstants = __webpack_require__(57);
+	var EventPropagators = __webpack_require__(59);
 	var ReactInputSelection = __webpack_require__(130);
-	var SyntheticEvent = __webpack_require__(64);
+	var SyntheticEvent = __webpack_require__(61);
 
 	var getActiveElement = __webpack_require__(142);
 	var isTextInputElement = __webpack_require__(129);
@@ -16344,11 +16399,11 @@
 
 	"use strict";
 
-	var EventConstants = __webpack_require__(60);
+	var EventConstants = __webpack_require__(57);
 	var EventPluginUtils = __webpack_require__(23);
-	var EventPropagators = __webpack_require__(62);
+	var EventPropagators = __webpack_require__(59);
 	var SyntheticClipboardEvent = __webpack_require__(143);
-	var SyntheticEvent = __webpack_require__(64);
+	var SyntheticEvent = __webpack_require__(61);
 	var SyntheticFocusEvent = __webpack_require__(144);
 	var SyntheticKeyboardEvent = __webpack_require__(145);
 	var SyntheticMouseEvent = __webpack_require__(133);
@@ -16777,7 +16832,7 @@
 
 	"use strict";
 
-	var DOMProperty = __webpack_require__(57);
+	var DOMProperty = __webpack_require__(62);
 
 	var MUST_USE_ATTRIBUTE = DOMProperty.injection.MUST_USE_ATTRIBUTE;
 
@@ -17225,7 +17280,7 @@
 	var Transaction = __webpack_require__(52);
 
 	var assign = __webpack_require__(42);
-	var emptyFunction = __webpack_require__(49);
+	var emptyFunction = __webpack_require__(48);
 
 	/**
 	 * Provides a `CallbackQueue` queue for collecting `onDOMReady` callbacks
@@ -17597,38 +17652,6 @@
 /* 115 */
 /***/ function(module, exports, __webpack_require__) {
 
-	/**
-	 * Copyright 2013-2014, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 * @providesModule performance
-	 * @typechecks
-	 */
-
-	"use strict";
-
-	var ExecutionEnvironment = __webpack_require__(45);
-
-	var performance;
-
-	if (ExecutionEnvironment.canUseDOM) {
-	  performance =
-	    window.performance ||
-	    window.msPerformance ||
-	    window.webkitPerformance;
-	}
-
-	module.exports = performance || {};
-
-
-/***/ },
-/* 116 */
-/***/ function(module, exports, __webpack_require__) {
-
 	/* WEBPACK VAR INJECTION */(function(process) {/**
 	 * Copyright 2013-2014, Facebook, Inc.
 	 * All rights reserved.
@@ -17909,7 +17932,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 117 */
+/* 116 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(process) {/**
@@ -17978,7 +18001,7 @@
 	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(19)))
 
 /***/ },
-/* 118 */
+/* 117 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -18013,7 +18036,7 @@
 
 
 /***/ },
-/* 119 */
+/* 118 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -18029,7 +18052,7 @@
 
 	"use strict";
 
-	var EventPluginHub = __webpack_require__(61);
+	var EventPluginHub = __webpack_require__(58);
 
 	function runEventQueueInBatch(events) {
 	  EventPluginHub.enqueueEvents(events);
@@ -18067,7 +18090,7 @@
 
 
 /***/ },
-/* 120 */
+/* 119 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -18103,7 +18126,7 @@
 
 
 /***/ },
-/* 121 */
+/* 120 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/**
@@ -18135,6 +18158,38 @@
 	}
 
 	module.exports = getEventTarget;
+
+
+/***/ },
+/* 121 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright 2013-2014, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 * @providesModule performance
+	 * @typechecks
+	 */
+
+	"use strict";
+
+	var ExecutionEnvironment = __webpack_require__(45);
+
+	var performance;
+
+	if (ExecutionEnvironment.canUseDOM) {
+	  performance =
+	    window.performance ||
+	    window.msPerformance ||
+	    window.webkitPerformance;
+	}
+
+	module.exports = performance || {};
 
 
 /***/ },
@@ -18534,7 +18589,7 @@
 
 	"use strict";
 
-	var SyntheticEvent = __webpack_require__(64);
+	var SyntheticEvent = __webpack_require__(61);
 
 	/**
 	 * @interface Event
@@ -18773,7 +18828,7 @@
 
 	"use strict";
 
-	var SyntheticEvent = __webpack_require__(64);
+	var SyntheticEvent = __webpack_require__(61);
 
 	/**
 	 * @interface Event
@@ -18865,7 +18920,7 @@
 	"use strict";
 
 	var SyntheticUIEvent = __webpack_require__(148);
-	var ViewportMetrics = __webpack_require__(120);
+	var ViewportMetrics = __webpack_require__(119);
 
 	var getEventModifierState = __webpack_require__(158);
 
@@ -19142,7 +19197,7 @@
 
 	var CallbackQueue = __webpack_require__(50);
 	var PooledClass = __webpack_require__(51);
-	var ReactBrowserEventEmitter = __webpack_require__(63);
+	var ReactBrowserEventEmitter = __webpack_require__(60);
 	var ReactInputSelection = __webpack_require__(130);
 	var ReactPutListenerQueue = __webpack_require__(153);
 	var Transaction = __webpack_require__(52);
@@ -19432,10 +19487,10 @@
 
 	"use strict";
 
-	var ReactBrowserEventEmitter = __webpack_require__(63);
+	var ReactBrowserEventEmitter = __webpack_require__(60);
 
-	var accumulateInto = __webpack_require__(117);
-	var forEachAccumulated = __webpack_require__(118);
+	var accumulateInto = __webpack_require__(116);
+	var forEachAccumulated = __webpack_require__(117);
 	var invariant = __webpack_require__(53);
 
 	function remove(event) {
@@ -19650,7 +19705,7 @@
 	 * @typechecks
 	 */
 
-	var emptyFunction = __webpack_require__(49);
+	var emptyFunction = __webpack_require__(48);
 
 	/**
 	 * Upstream version of event listener. Does not take into account specific
@@ -19815,7 +19870,7 @@
 
 	"use strict";
 
-	var SyntheticEvent = __webpack_require__(64);
+	var SyntheticEvent = __webpack_require__(61);
 
 	/**
 	 * @interface Event
@@ -20094,9 +20149,9 @@
 
 	"use strict";
 
-	var SyntheticEvent = __webpack_require__(64);
+	var SyntheticEvent = __webpack_require__(61);
 
-	var getEventTarget = __webpack_require__(121);
+	var getEventTarget = __webpack_require__(120);
 
 	/**
 	 * @interface UIEvent
@@ -20348,7 +20403,7 @@
 	"use strict";
 
 	var PooledClass = __webpack_require__(51);
-	var ReactBrowserEventEmitter = __webpack_require__(63);
+	var ReactBrowserEventEmitter = __webpack_require__(60);
 
 	var assign = __webpack_require__(42);
 
@@ -21181,7 +21236,7 @@
 	var ExecutionEnvironment = __webpack_require__(45);
 
 	var createNodesFromMarkup = __webpack_require__(164);
-	var emptyFunction = __webpack_require__(49);
+	var emptyFunction = __webpack_require__(48);
 	var getMarkupWrap = __webpack_require__(165);
 	var invariant = __webpack_require__(53);
 

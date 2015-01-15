@@ -39,12 +39,12 @@ var Demo = React.createClass({
         // });
         this.startIndirectUserInput({
             x: {
-                value: pos.x/this.animationState.sizeX,
-                modelFn: Model.controlled.make.dampedHarmonicOscillator(20, 0.7)
+                endValue: pos.x/this.animationState.sizeX,
+                modelFn: Model.controlled.make.dampedHarmonicOscillator(10, 0.7)
             },
             y: {
-                value: pos.y/this.animationState.sizeY,
-                modelFn: Model.controlled.make.dampedHarmonicOscillator(20, 0.7)
+                endValue: pos.y/this.animationState.sizeY,
+                modelFn: Model.controlled.make.dampedHarmonicOscillator(10, 0.7)
             }
         });
     },
@@ -77,14 +77,25 @@ var Demo = React.createClass({
         });
     },
     simulateBall(x, y) {
+        // this.simulateToHalt({
+        //     x: {
+        //         endValue: x,
+        //         modelFn: Model.controlled.underDamped
+        //     },
+        //     y: {
+        //         endValue: y,
+        //         modelFn: Model.controlled.underDamped
+        //     }
+        // });
+        // var slide = Model.helpers.constrain(Model.uncontrolled.slide, [Model.constraints.boundaries(0,1)]);
+        var gravity = Model.helpers.constrain(Model.uncontrolled.gravityUpsideDown, [Model.constraints.boundaries(0,1)]);
+        var airDrag = Model.helpers.constrain(Model.uncontrolled.airDrag, [Model.constraints.boundaries(0,1)]);
         this.simulateToHalt({
             x: {
-                endValue: x,
-                modelFn: Model.controlled.underDamped
+                modelFn: airDrag
             },
             y: {
-                endValue: y,
-                modelFn: Model.controlled.underDamped
+                modelFn: gravity
             }
         });
     },

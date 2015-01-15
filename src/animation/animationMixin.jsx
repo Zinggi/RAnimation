@@ -290,7 +290,7 @@ var animationMixin = {
      *     Uncontrolled: It will just follow the modeled behavior until it comes to a halt.
      *                   Note that you might still know where it ends,
      *                   e.g. with gravity it will eventually stop at the ground.
-     *         examples: friction, gravity
+     *         examples: slide, gravity
      * 
      *  + Physically accurate, natural movement
      *  - You don't know when it stops exactly, less control.
@@ -307,7 +307,7 @@ var animationMixin = {
      *             //   where o : { value: Num, velocity: Num, acceleration: Num, (Optional)endValue: Num }
      *             //     NOTE: f can modify obj in place and then return the modified version!
      *             // DEFAULT: if endValue specified: Model.controlled.criticallyDamped
-     *             //          else Model.uncontrolled.friction
+     *             //          else Model.uncontrolled.slide
      *         endValue: 42,
      *             // If you use a function from Model.controlled.* specify the end value here,
      *             // else omit the property. Its either a number
@@ -331,7 +331,7 @@ var animationMixin = {
      *     }
      * }
      */
-    simulateToHalt(newState) {
+    simulateToHalt(newState, dontStop) {
         for (var p in newState) {
             var config = newState[p];
             var anim = this.cancelAnimation(p);
@@ -350,11 +350,15 @@ var animationMixin = {
             if (isControlled) {
                 modelFn = modelFn || Model.controlled.criticalDamped;
             } else {
-                modelFn = modelFn || Model.uncontrolled.friction;
+                modelFn = modelFn || Model.uncontrolled.slide;
             }
             var endCondition = config.endCondition;
             if (isControlled) {
-                endCondition = endCondition || Model.helpers.stopControlled;
+                if (dontStop) {
+                    endCondition = endCondition || Model.helpers.dontStop;    
+                } else {
+                    endCondition = endCondition || Model.helpers.stopControlled;
+                }
             } else {
                 endCondition = endCondition || Model.helpers.stopUncontrolled;
             }
@@ -444,7 +448,7 @@ var animationMixin = {
      * @newState: refer to a controlled simulateToHalt()
      */
     startIndirectUserInput(newState) {
-        this.simulateToHalt(newState);
+        this.simulateToHalt(newState, true);
         // for (var p in newState) {
         //     var config = newState[p];
         //     var anim = this.cancelAnimation(p);
