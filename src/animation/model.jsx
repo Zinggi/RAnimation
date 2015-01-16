@@ -72,13 +72,7 @@ Model.constraints = {
 						o.velocity = 0;
 					}
 				}
-				console.log(o);
 				o.velocity = -e*o.velocity;
-				// if (Math.abs(o.velocity) < 0.5) {
-				// 	o.velocity = 0;	
-				// } else {
-				// 	o.velocity = -e*o.velocity;
-				// }
 			}
 		};
 	}
