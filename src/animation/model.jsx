@@ -53,21 +53,29 @@ Model.helpers = {
     }
 };
 Model.constraints = {
-	boundaries(lower, upper, elasticConstant) {
+	// TODO: still buggy!
+	// I think I'm doing this wrong, especially the check to see if velocity is big enough
+	// seems wrong. However, it seems to work ok...
+	boundaries(lower, upper, bounceConstant) {
 		var l = typeof lower !== 'undefined' ? lower : -Infinity;
 		var u = typeof upper !== 'undefined' ? upper : Infinity;
-		var e = typeof elasticConstant !== 'undefined' ? elasticConstant : 0.8;
+		var e = typeof bounceConstant !== 'undefined' ? bounceConstant : 0.8;
 		return (o, dt) => {
-			var stopped = true;
 			if (o.value < l) {
 				o.value = l;
+				if (o.velocity < -0.8) {
+					o.velocity = -e*e*o.velocity;
+				} else {
+					o.velocity = 0;
+					o.acceleration = 0;
+				}
 			} else if (o.value > u) {
 				o.value = u;
-			} else {stopped = false; }
-			if (stopped) {
-				o.velocity = -e*e*o.velocity;
-				if (Math.abs(o.velocity) < eps) {
-					o.value = o.value - o.velocity*dt;
+				console.log(o);
+				if (o.velocity > 0.8) {
+					o.velocity = -e*e*o.velocity;
+				} else {
+					o.velocity = 0;
 					o.acceleration = 0;
 				}
 			}
@@ -78,20 +86,29 @@ Model.constraints = {
 Model.forces = {
 	/* a simple friction force */
 	friction(frictionCoefficient) {
-		return (v) => {
-			if (v > eps) {
+		return (o) => {
+			if (o.velocity > eps) {
 				return -frictionCoefficient;
-			} else if (v < -eps) {
+			} else if (o.velocity < -eps) {
 				return frictionCoefficient;
 			} return 0;
 		};
 	},
-	gravity(g) {
-		return -g;
+	gravity(g, floor) {
+		return (o) => {
+			if (g > 0 && o.value > floor) {
+				return -g;
+			} else if (g < 0 && o.value < floor) {
+				return -g;
+			} else {
+				return 0;
+			}
+		};
 	},
 	/* Drag equation with a high Reynolds number */
 	fluidDrag(dragConstant) {
-		return (v) => {
+		return (o) => {
+			var v = o.velocity;
 			if (v > 0) {
 				return -dragConstant*v*v;
 			} else {
@@ -101,15 +118,15 @@ Model.forces = {
 	},
 	/* Drag equation with a low Reynolds number */
 	airDrag(dragConstant) {
-		return (v) => -dragConstant*v;
+		return (o) => -dragConstant*o.velocity;
 	},
 	spring(springConstant) {
-		return (xEnd, x) => {
-			return (xEnd - x) * springConstant;
+		return (o) => {
+			return (o.endValue - o.value) * springConstant;
 		};
 	},
 	damper(damperConstant) {
-		return (v) => -damperConstant*v;
+		return (o) => -damperConstant*o.velocity;
 	}
 };
 
@@ -120,7 +137,7 @@ Model.controlled.make = {
 		var fd = Model.forces.damper(damperConstant);
 		var fs = Model.forces.spring(springConstant);
 		return (obj, dt, t) => {
-			return Model.helpers.verletIntegration(obj, (fs(obj.endValue, obj.value)+fd(obj.velocity))/mass, dt);
+			return Model.helpers.verletIntegration(obj, (fs(obj)+fd(obj))/mass, dt);
 		};
     }
 };
@@ -141,39 +158,39 @@ Model.controlled.criticallyDamped = Model.controlled.make.criticallyDamped(10);
 // ### Uncontrolled ###
 Model.uncontrolled = {};
 Model.uncontrolled.make = {
-	gravity(g) {
-		var fg = Model.forces.gravity(g);
+	gravity(g, floor) {
+		var fg = Model.forces.gravity(g, floor);
 		return (obj, dt, t) => {
-			return Model.helpers.verletIntegration(obj, fg, dt);
+			return Model.helpers.verletIntegration(obj, fg(obj), dt);
 		};
 	},
 	slide(friction) {
 		var f = Model.forces.friction(friction);
 		return (obj, dt, t) => {
-			return Model.helpers.verletIntegration(obj, f(obj.velocity), dt);
+			return Model.helpers.verletIntegration(obj, f(obj), dt);
 		};
 	},
 	slidePhysical(mass, g, friction) {
 		var f = Model.forces.friction(g*mass*friction);
 		return (obj, dt, t) => {
-			return Model.helpers.verletIntegration(obj, f(obj.velocity), dt);
+			return Model.helpers.verletIntegration(obj, f(obj), dt);
 		};
 	},
 	airDrag(constant) {
 		var f = Model.forces.airDrag(constant);
 		return (obj, dt, t) => {
-			return Model.helpers.verletIntegration(obj, f(obj.velocity), dt);
+			return Model.helpers.verletIntegration(obj, f(obj), dt);
 		};
 	},
 	fluidDrag(constant) {
 		var f = Model.forces.fluidDrag(constant);
 		return (obj, dt, t) => {
-			return Model.helpers.verletIntegration(obj, f(obj.velocity), dt);
+			return Model.helpers.verletIntegration(obj, f(obj), dt);
 		};
 	}
 };
-Model.uncontrolled.gravity = Model.uncontrolled.make.gravity(10);
-Model.uncontrolled.gravityUpsideDown = Model.uncontrolled.make.gravity(-10);
+Model.uncontrolled.gravity = Model.uncontrolled.make.gravity(10, 0);
+Model.uncontrolled.gravityUpsideDown = Model.uncontrolled.make.gravity(-10, 1);
 Model.uncontrolled.slide = Model.uncontrolled.make.slide(1);
 Model.uncontrolled.airDrag = Model.uncontrolled.make.airDrag(0.5);
 Model.uncontrolled.damper = Model.uncontrolled.make.airDrag(5);
