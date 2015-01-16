@@ -45,8 +45,6 @@ var Demo = React.createClass({
                                  onChange={(e) => {this.setState({fadeDuration: parseFloat(e.target.value)});}} />
             </div> :
             <div>
-                NOTE: Since we aren't using a 100% accurate simulation, critical damping actually happens slightly after damping = 1
-                <br />
                 frequency: <input type="number" step="0.5" value={this.state.frequency}
                                  onChange={(e) => {this.setState({frequency: parseFloat(e.target.value)});}} />
                 damping: <input type="number" step="0.1" value={this.state.damping}

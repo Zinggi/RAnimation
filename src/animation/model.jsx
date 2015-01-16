@@ -56,28 +56,29 @@ Model.constraints = {
 	// TODO: still buggy!
 	// I think I'm doing this wrong, especially the check to see if velocity is big enough
 	// seems wrong. However, it seems to work ok...
-	boundaries(lower, upper, bounceConstant) {
+	elasticBoundaries(lower, upper, bounceConstant) {
 		var l = typeof lower !== 'undefined' ? lower : -Infinity;
 		var u = typeof upper !== 'undefined' ? upper : Infinity;
 		var e = typeof bounceConstant !== 'undefined' ? bounceConstant : 0.8;
 		return (o, dt) => {
-			if (o.value < l) {
-				o.value = l;
-				if (o.velocity < -0.8) {
-					o.velocity = -e*e*o.velocity;
-				} else {
-					o.velocity = 0;
-					o.acceleration = 0;
+			var b = (o.value < l) ? l : ((o.value > u) ? u : undefined);
+			if (typeof b !== "undefined") {
+				o.value = b;
+				// I have no idea why, but this seems to be helping to stop the jittering
+				if (Math.abs(o.velocity) < 1) {
+					o.acceleration = o.acceleration*o.acceleration * o.velocity;
+					if (Math.abs(o.velocity) < 0.05) {
+						o.acceleration = 0;
+						o.velocity = 0;
+					}
 				}
-			} else if (o.value > u) {
-				o.value = u;
 				console.log(o);
-				if (o.velocity > 0.8) {
-					o.velocity = -e*e*o.velocity;
-				} else {
-					o.velocity = 0;
-					o.acceleration = 0;
-				}
+				o.velocity = -e*o.velocity;
+				// if (Math.abs(o.velocity) < 0.5) {
+				// 	o.velocity = 0;	
+				// } else {
+				// 	o.velocity = -e*o.velocity;
+				// }
 			}
 		};
 	}

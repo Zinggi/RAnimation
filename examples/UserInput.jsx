@@ -87,9 +87,9 @@ var Demo = React.createClass({
         //         modelFn: Model.controlled.underDamped
         //     }
         // });
-        // var slide = Model.helpers.constrain(Model.uncontrolled.slide, [Model.constraints.boundaries(0,1)]);
-        var gravity = Model.helpers.constrain(Model.uncontrolled.gravityUpsideDown, [Model.constraints.boundaries(0,1)]);
-        var airDrag = Model.helpers.constrain(Model.uncontrolled.airDrag, [Model.constraints.boundaries(0,1)]);
+        // var slide = Model.helpers.constrain(Model.uncontrolled.slide, [Model.constraints.elasticBoundaries(0, 1)]);
+        var gravity = Model.helpers.constrain(Model.uncontrolled.gravityUpsideDown, [Model.constraints.elasticBoundaries(0, 1, 0.7)]);
+        var airDrag = Model.helpers.constrain(Model.uncontrolled.airDrag, [Model.constraints.elasticBoundaries(0, 1, 0.7)]);
         this.simulateToHalt({
             x: {
                 modelFn: airDrag
