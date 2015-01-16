@@ -1,15 +1,11 @@
 "use strict";
 
-require('./polyfills');
+var isVisible = require('./polyfills');
 
 var Easing = require("./easing");
 var EasingHelpers = Easing.helpers;
 var Model = require("./model");
 var ModelHelpers = Model.helpers;
-
-// TODO: check simulation.jsx for comment
-// var Simulation = require("./simulation");
-// var SimulationHelpers = Simulation.helpers;
 
 // A little helper function, as we do all calculations in seconds
 var nowInSeconds = () => window.performance.now() / 1000;
@@ -22,6 +18,15 @@ var animationFrame;
 var numAnimations = 0;
 // The last time we rendered a frame
 var lastFrame = nowInSeconds();
+
+isVisible(() => {
+    if (isVisible()) {
+        // we reset this, as a lot of time passed since being hidden,
+        // so dt would be ridiculously high!
+        lastFrame = nowInSeconds();
+    }
+});
+
 
 // the animation loop
 var doAnimations = () => {
@@ -219,68 +224,6 @@ var animationMixin = {
     },
 
     /*
-     * TODO: check comment in simulation.jsx!
-     * 
-     * Simulates the transition from the current state to the given newState,
-     * respecting the inertia.
-     * 
-     *  + Physically accurate, natural movement
-     *  - You don't know when it stops exactly, less control.
-     *
-     * @newState: an object like this:
-     *     {
-     *         x: {
-     *             endValue: 42, // Where to simulate to.
-     *                           // a number
-     *                           // -OR-
-     *                           // a function of type: (velocity: Num) -> Num
-     *                           //     This is useful if your end value depends on the previous velocity.
-     *                           // REQUIRED
-     *             simulationFn: Simulation.underDamped, // A function f of type:
-     *                 // f(startValue: Num, endValue: Num, startVelocity: Num) -> (t: Num n -> Num)
-     *                 //   where n > 0, f(x0, x1, v0)(0) = x0, f(x0, x1, v0)(infinity) = x1, df(x0, x1, v0)/dt(0) = v0
-     *                 // The simulation ends at t:
-     *                 //   |f(x0, x1, v0)(t) - x1| < eps and |df(x0, x1, v0)/dt(t)| < eps, for a very small eps.
-     *                 // Useful functions can be found in Simulation.*
-     *                 // DEFAULT: Simulation.criticalDamped
-     *             onEnd: callback // A callback that gets called with true, when the simulation finished
-     *                             // or with false, when interrupted.
-     *         }, ...
-     *     }
-     */
-    // simulateTo(newState) {
-    //     var startTime = nowInSeconds();
-
-    //     for (var p in newState) {
-    //         var config = newState[p];
-
-    //         var startValue = this.animationState[p];
-            
-    //         var canceledAnim = this.cancelAnimation(p);
-    //         var velocity = canceledAnim && canceledAnim.velocity || 0;
-    //         var simulationFn = config.simulationFn || Simulation.criticalDamped;
-
-    //         var endValue;
-    //         if (typeof config.endValue === "function") {
-    //             endValue = config.endValue(velocity);
-    //         } else {
-    //             endValue = config.endValue;
-    //         }
-
-    //         var finalSimFn = simulationFn(startValue, endValue, velocity);
-
-    //         var anim = {
-    //             value: startValue,
-    //             velocity: velocity,
-    //             finished: false,
-    //             onEnd: config.onEnd,
-    //             advance: SimulationHelpers.advanceAnimation(startTime, endValue, finalSimFn)
-    //         };
-    //         startAnimation(anim, p, this);
-    //     }
-    // },
-
-    /*
      * Use to simulate a value to a halt. This can be used for example after a directUserInput,
      * for instance in a scrolling list.
      * 
@@ -449,15 +392,6 @@ var animationMixin = {
      */
     startIndirectUserInput(newState) {
         this.simulateToHalt(newState, true);
-        // for (var p in newState) {
-        //     var config = newState[p];
-        //     var anim = this.cancelAnimation(p);
-        //     var velocity = (anim && anim.velocity) || 0;
-        //     var acceleration = (anim && anim.acceleration) || 0;
-        //     var endValue = config.value;
-        //     var modelFn = config.modelFn || Model.criticalDamped;
-        //     startModelSimulation(this, p, this.animationState[p], endValue, velocity, acceleration, modelFn);
-        // }
     },
 
     /*
