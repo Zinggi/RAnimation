@@ -40,7 +40,7 @@ var doAnimations = () => {
             var anim = anims[prop];
             var newAnim = anim.advance(anim, dt, now);
             anims[prop] = newAnim;
-            ref.animationState[prop] = newAnim.value;
+            ref.animationState[prop] = newAnim.value * (newAnim.scale || 1);
             if (newAnim.finished) {
                 ref.cancelAnimation(prop, true);
             }
@@ -98,7 +98,7 @@ var startDirectInputAnimation = (ref, prop, startValue) => {
 };
 
 // This is used to start a simulation based on a model.
-var startModelSimulation = (ref, prop, startValue, endValue, velocity, acceleration, modelFn, endCondition, onEnd) => {
+var startModelSimulation = (ref, prop, startValue, endValue, velocity, acceleration, modelFn, endCondition, onEnd, scale) => {
     startAnimation({
         advance: modelFn,
         endValue: endValue,
@@ -107,7 +107,8 @@ var startModelSimulation = (ref, prop, startValue, endValue, velocity, accelerat
         acceleration: acceleration,
         finished: false,
         endCondition: endCondition,
-        onEnd: onEnd
+        onEnd: onEnd,
+        scale: scale
     }, prop, ref);
 };
 
@@ -115,7 +116,7 @@ var startModelSimulation = (ref, prop, startValue, endValue, velocity, accelerat
 var modifyAnimationEndValue = (ref, prop, newValue) => {
     var anim = getAnimation(ref, prop);
     if (anim) {
-        anim.endValue = newValue;
+        anim.endValue = newValue * (anim.scale || 1);
     }
 };
 
@@ -306,7 +307,8 @@ var animationMixin = {
                 endCondition = endCondition || Model.helpers.stopUncontrolled;
             }
             var onEnd = config.onEnd;
-            startModelSimulation(this, p, this.animationState[p], endValue, velocity, acceleration, modelFn, endCondition, onEnd);
+            var scale = config.scale || 1;
+            startModelSimulation(this, p, this.animationState[p] * scale, endValue * scale, velocity, acceleration, modelFn, endCondition, onEnd, scale);
         }
     },
 
