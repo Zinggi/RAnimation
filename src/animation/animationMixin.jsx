@@ -40,7 +40,7 @@ var doAnimations = () => {
             var anim = anims[prop];
             var newAnim = anim.advance(anim, dt, now);
             anims[prop] = newAnim;
-            ref.animationState[prop] = newAnim.value * (newAnim.scale || 1);
+            ref.animationState[prop] = newAnim.value / (newAnim.scale || 1);
             if (newAnim.finished) {
                 ref.cancelAnimation(prop, true);
             }
