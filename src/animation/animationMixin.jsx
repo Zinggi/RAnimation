@@ -40,7 +40,7 @@ var doAnimations = () => {
             var anim = anims[prop];
             var newAnim = anim.advance(anim, dt, now);
             anims[prop] = newAnim;
-            ref.animationState[prop] = newAnim.value / (newAnim.scale || 1);
+            ref.animationState[prop] = newAnim.value;
             if (newAnim.finished) {
                 ref.cancelAnimation(prop, true);
             }
@@ -98,7 +98,7 @@ var startDirectInputAnimation = (ref, prop, startValue) => {
 };
 
 // This is used to start a simulation based on a model.
-var startModelSimulation = (ref, prop, startValue, endValue, velocity, acceleration, modelFn, endCondition, onEnd, scale) => {
+var startModelSimulation = (ref, prop, startValue, endValue, velocity, acceleration, modelFn, endCondition, onEnd) => {
     startAnimation({
         advance: modelFn,
         endValue: endValue,
@@ -107,8 +107,7 @@ var startModelSimulation = (ref, prop, startValue, endValue, velocity, accelerat
         acceleration: acceleration,
         finished: false,
         endCondition: endCondition,
-        onEnd: onEnd,
-        scale: scale
+        onEnd: onEnd
     }, prop, ref);
 };
 
@@ -116,7 +115,7 @@ var startModelSimulation = (ref, prop, startValue, endValue, velocity, accelerat
 var modifyAnimationEndValue = (ref, prop, newValue) => {
     var anim = getAnimation(ref, prop);
     if (anim) {
-        anim.endValue = newValue * (anim.scale || 1);
+        anim.endValue = newValue;
     }
 };
 
@@ -225,7 +224,7 @@ var animationMixin = {
     },
 
     /*
-     * Use to simulate a value to a halt. This can be used for example after a directUserInput,
+     * Use to simulate a value to a halt. This can be used for example after some userInput,
      * for instance in a scrolling list.
      * 
      * There are controlled and uncontrolled model functions.
@@ -234,7 +233,7 @@ var animationMixin = {
      *     Uncontrolled: It will just follow the modeled behavior until it comes to a halt.
      *                   Note that you might still know where it ends,
      *                   e.g. with gravity it will eventually stop at the ground.
-     *         examples: slide, gravity
+     *         examples: damper, gravity
      * 
      *  + Physically accurate, natural movement
      *  - You don't know when it stops exactly, less control.
@@ -250,25 +249,26 @@ var animationMixin = {
      *             // the function f should be of type: f(obj : o, dt: Num, t: Num) -> o,
      *             //   where o : { value: Num, velocity: Num, acceleration: Num, (Optional)endValue: Num }
      *             //     NOTE: f can modify obj in place and then return the modified version!
-     *             // DEFAULT: if endValue specified: Model.controlled.criticallyDamped
-     *             //          else Model.uncontrolled.slide
+     *             // DEFAULT: Model.controlled.criticallyDamped, if endValue specified
+     *                         TODO: test
+     *             //          Model.uncontrolled.damper, else
      *         endValue: 42,
      *             // If you use a function from Model.controlled.* specify the end value here,
      *             // else omit the property. Its either a number
      *             // -OR-
      *             // a function of type: (velocity: Num) -> Num
      *             //     This is useful if your end value depends on the previous velocity.
-     *             // OPTIONAL
+     *             // REQUIRED, if using controlled. OMIT, if using uncontrolled.
      *         endCondition(o) { return Math.abs(o.velocity) < 0.5; },
      *             // A function to indicate when to end the simulation.
      *             // This can for instance be useful if you want to go from an uncontrolled to a
      *             // controlled model when a certain condition is reached, for instance
      *             // for a scrolling list that snaps to a grid when below a certain velocity.
-     *             // DEFAULT: for controlled:
-     *             //                   |o.endValue-o.value| < 0.0001 && |o.velocity| < 0.0001
-     *             //          for uncontrolled:
-     *             //                   |o.velocity| < 0.0001 && |o.acceleration| < 0.0001
-     *         onEnd: callback
+     *             // DEFAULT: |o.endValue-o.value| < 0.0001 && |o.velocity| < 0.0001
+     *             //               for controlled,
+     *             //          |o.velocity| < 0.0001 && |o.acceleration| < 0.0001
+     *             //               for uncontrolled.
+     *         onEnd(couldFinish) { console.log(couldFinish);},
      *             // A callback that gets called with true, when the simulation finished
      *             // or with false, when interrupted.
      *             // OPTIONAL
@@ -294,7 +294,7 @@ var animationMixin = {
             if (isControlled) {
                 modelFn = modelFn || Model.controlled.criticalDamped;
             } else {
-                modelFn = modelFn || Model.uncontrolled.slide;
+                modelFn = modelFn || Model.uncontrolled.damper;
             }
             var endCondition = config.endCondition;
             if (isControlled) {
@@ -307,26 +307,22 @@ var animationMixin = {
                 endCondition = endCondition || Model.helpers.stopUncontrolled;
             }
             var onEnd = config.onEnd;
-            var scale = config.scale || 1;
-            startModelSimulation(this, p, this.animationState[p] * scale, endValue * scale, velocity, acceleration, modelFn, endCondition, onEnd, scale);
+            startModelSimulation(this, p, this.animationState[p], endValue, velocity, acceleration, modelFn, endCondition, onEnd);
         }
     },
 
     /*
-     * Use to set the animation state directly,
-     * while giving you the benefit of offloading the rendering to the animation frame
-     * and keeping track of the velocity for smooth transitions to a controlled animation.
+     * Use to set the desired animation state directly (or indirectly).
      * 
      * Best used with user input to give them maximum control over an animation.
      * Good candidates for using this are onMouseMove, onTouchMove, onScroll, etc...
      *
-     * MAKE SURE YOU'VE USED startDirectUserInput BEFORE!
+     * MAKE SURE YOU'VE USED startDirectUserInput or startIndirectUserInput BEFORE!
+     * or
+     * you're IN THE MIDDLE of a CONTROLLED simulateToHalt animation!
      *
-     * A directUserInput animation can be stopped by
+     * A userInput animation can be stopped by
      * either starting another animation for the same prop or by using cancelAnimation
-     *
-     *  + Direct control to the user
-     *  - Unphysical movement
      *
      * @newState: an object like:
      * {
@@ -334,19 +330,26 @@ var animationMixin = {
      * }
      * 
      */
-    directUserInput(newState) {
+    userInput(newState) {
         for (var p in newState) {
             modifyAnimationEndValue(this, p, newState[p]);
         }
     },
+
     /*
-     * Call this just before starting a series of directUserInput(..)s.
-     * It prepares everything necessary to offload all fallowing directUserInput(..)s
+     * Call this just before starting a series of userInput(..)s.
+     * It prepares everything necessary to offload all fallowing userInput(..)s
      * into the animation frame and to keep track of the velocity.
      *
      * Good candidates for using this are onMouseDown, onTouchDown, onScrollStart, etc...
      *
-     * @startState: an object containing the starting state.
+     *  + Maximum control to the user
+     *  - Unphysical movements
+     * 
+     * @startState: an object containing the starting state., e.g.
+     * {
+     *     x: 42
+     * }
      */
     startDirectUserInput(startState) {
         for (var p in startState) {
@@ -356,41 +359,18 @@ var animationMixin = {
     },
 
     /*
-     * Use to set the animation state indirectly,
-     * while giving you the benefit of offloading the rendering to the animation frame
-     * and keeping track of the velocity for smooth transitions to a controlled animation.
-     * 
-     * Best used with user input to give them some control over an animation.
-     * Good candidates for using this are onMouseMove, onTouchMove, onScroll, etc...
-     *
-     * MAKE SURE YOU'VE USED startIndirectUserInput BEFORE or
-     * you're IN THE MIDDLE of a CONTROLLED simulateToHalt animation!
-     *
-     * An indirectUserInput animation can be stopped by
-     * starting another animation for that prop or by using cancelAnimation
-     *
-     *  + Control to the user...
-     *  - ... but not very accurate
-     *  + physical movement
-     *
-     * @newState: an object like:
-     * {
-     *     x: e.clientX // The new value.
-     * }
-     * 
-     */
-    indirectUserInput(newState) {
-        this.directUserInput(newState);
-    },
-    /*
-     * Call this just before starting a series of indirectUserInput(..)s.
+     * Call this just before starting a series of userInput(..)s.
      *
      * Good candidates for using this are onMouseDown, onTouchDown, onScrollStart, etc...
      *
      * This is equivalent to starting a controlled simulateToHalt animation,
      * so if there is already one going on, you don't need to call this.
      *
-     * @newState: refer to a controlled simulateToHalt()
+     *  + Control to the user...
+     *  - ... but not very accurate
+     *  + physical movement
+     * 
+     * @newState: refer to a controlled simulateToHalt(...) animation.
      */
     startIndirectUserInput(newState) {
         this.simulateToHalt(newState, true);

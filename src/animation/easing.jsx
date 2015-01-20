@@ -141,7 +141,6 @@ var make = {
     },
     /* 
      * returns a spring like function
-     * Thanks @Microsoft
      * 
      * @springiness: how much it swings, 7 seems to be a nice value.
      * @numberOfSwings: how many swings, Integer.
@@ -150,48 +149,7 @@ var make = {
         var s = springiness;
         var n = Math.round(numberOfSwings);
         return x => (Math.exp(s*x)-1.0)/(Math.exp(s)-1.0)*(Math.sin((Math.PI * 2.0 * n + Math.PI * 0.5) * x));
-    },
-    /*
-     * returns a cartoony bounce function.
-     * Thanks @Microsoft
-     *
-     * @bounces: the number of bounces, Integer
-     * @bounciness: how damped the bounces are, should be bigger than 1.
-     *     2 will result in bounces of half the height
-     */
-    bounceIn(bounces, bounciness) {
-        // Clamp the bounciness so we don't hit a divide by zero
-        if (bounciness <= 1) {
-            bounciness = 1.001;
-        }
-    
-        var pow = Math.pow(bounciness, bounces);
-        var oneMinusBounciness = 1.0 - bounciness;
-    
-        // 'unit' space calculations.
-        var sumOfUnits = (1.0 - pow) / oneMinusBounciness + pow * 0.5; // geometric series with only half the last sum
-        return t => {
-            var unitAtT = t * sumOfUnits;
-            
-            // 'bounce' space calculations.
-            var bounceAtT = Math.log(-unitAtT * (1.0-bounciness) + 1.0) / Math.log(bounciness);
-            var start = Math.floor(bounceAtT);
-            var end = start + 1.0;
-            
-            // 'time' space calculations.
-            var startTime = (1.0 - Math.pow(bounciness, start)) / (oneMinusBounciness * sumOfUnits);
-            var endTime = (1.0 - Math.pow(bounciness, end)) / (oneMinusBounciness * sumOfUnits);
-            
-            // Curve fitting for bounce.
-            var midTime = (startTime + endTime) * 0.5;
-            var timeRelativeToPeak = t - midTime;
-            var radius = midTime - startTime;
-            var amplitude = Math.pow(1.0 / bounciness, (bounces - start));
-            
-            // Evaluate a quadratic that hits (startTime,0), (endTime, 0), and peaks at amplitude.
-            return (-amplitude / (radius * radius)) * (timeRelativeToPeak - radius) * (timeRelativeToPeak + radius);
-        };
-    },
+    }
 };
 
 Easing.make = make;

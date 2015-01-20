@@ -47,103 +47,49 @@
 	"use strict";
 
 	var React = __webpack_require__(2),
-	    $__0=    __webpack_require__(1),animationMixin=$__0.animationMixin,Easing=$__0.Easing,Model=$__0.Model;
+	    $__0=   __webpack_require__(1),animationMixin=$__0.animationMixin,Model=$__0.Model;
 
 	var Demo = React.createClass({displayName: "Demo",
+	    // Make sure the motor is running...
 	    mixins: [animationMixin],
-	    getInitialState:function() {
-	        return {
-	            animationType: "physical",
-	            duration: 1.5,
-	            easing: "quadInOut",
-	            fadeDuration: 0.5,
-	            fadeEasing: "quadOut",
-	            useFade: true,
-	            frequency: 10,
-	            damping: 0.6
-	        };
-	    },
+	    // The initial state
 	    getInitialAnimationState:function() {
 	        return {
 	            x: 0,
+	            // This information could also be stored in your state,
+	            // depending on your taste. But since our render method doesn't depend on this information,
+	            // it seems appropriate (and slightly better for performance(!)) to store it here.
 	            forwards: true
 	        };
 	    },
+	    // Your render method should NOT depend on animationState!
 	    render:function() {
-	        var options = Object.keys(Easing).filter(function(key)  {return !/make/.test(key);}).map(function(key)  {return React.createElement("option", {key: key}, key);});
-
-	        var config = (this.state.animationType === "static") ?
-	            React.createElement("div", null, 
-	                React.createElement("select", {value: this.state.easing, 
-	                        onChange: function(e)  {this.setState({easing: e.target.value});}.bind(this)}, 
-	                    options
-	                ), 
-	                "duration: ", React.createElement("input", {type: "number", step: "0.1", value: this.state.duration, 
-	                                 onChange: function(e)  {this.setState({duration: parseFloat(e.target.value)});}.bind(this)}), 
-	                React.createElement("br", null), 
-	                "fade? ", React.createElement("input", {type: "checkbox", checked: this.state.useFade, 
-	                             onChange: function(e)  {this.setState({useFade: e.target.checked});}.bind(this)}), 
-	                React.createElement("select", {value: this.state.fadeEasing, 
-	                        onChange: function(e)  {this.setState({fadeEasing: e.target.value});}.bind(this)}, 
-	                    options
-	                ), 
-	                "duration: ", React.createElement("input", {type: "number", step: "0.02", value: this.state.fadeDuration, 
-	                                 onChange: function(e)  {this.setState({fadeDuration: parseFloat(e.target.value)});}.bind(this)})
-	            ) :
-	            React.createElement("div", null, 
-	                "frequency: ", React.createElement("input", {type: "number", step: "0.5", value: this.state.frequency, 
-	                                 onChange: function(e)  {this.setState({frequency: parseFloat(e.target.value)});}.bind(this)}), 
-	                "damping: ", React.createElement("input", {type: "number", step: "0.1", value: this.state.damping, 
-	                                 onChange: function(e)  {this.setState({damping: parseFloat(e.target.value)});}.bind(this)}), 
-	                this.state.damping < 1 ? "under damped" : this.state.damping === 1 ? "critical damped" : "over damped"
-	            );
-
 	        return React.createElement("div", {style: {height:"100%"}}, 
-	            React.createElement("select", {value: this.state.animationType, 
-	                    onChange: function(e)  {this.setState({animationType: e.target.value});}.bind(this)}, 
-	                React.createElement("option", null, "static"), 
-	                React.createElement("option", null, "physical")
-	            ), 
-	            React.createElement("br", null), 
-	            config, 
-	            React.createElement("br", null), 
 	            React.createElement("button", {onClick: this.animateBall}, 
 	                "Animate!"
 	            ), 
-
+	            /* We give the ball a ref, so that we can later easily modify it's DOM node */
 	            React.createElement("div", {ref: "ball", 
 	                 style: {backgroundColor:"red", width: "50px", height: "50px", borderRadius: "10px", position: "absolute"}})
 	        );
 	    },
-	    animateBall:function() {
-	        var end = (this.animationState.forwards) ? 1 : 0;
-	        var isAtEnd = Math.abs(this.animationState.x - end) === 1;
-	        var isStatic = this.state.animationType === "static";
-	        if (!isStatic) {
-	            this.simulateToHalt({
-	                x: {
-	                    endValue: end,
-	                    modelFn: Model.controlled.make.dampedHarmonicOscillator(this.state.frequency, this.state.damping)
-	                }
-	            });
-	        } else {
-	            this.easeTo({
-	                x: {
-	                    endValue: end,
-	                    duration: this.state.duration * Math.abs(this.animationState.x - end),
-	                    easingFn: Easing[this.state.easing],
-	                    fade: (this.state.useFade && !isAtEnd) ? {
-	                        duration: this.state.fadeDuration,
-	                        interpolationFn: Easing[this.state.fadeEasing]
-	                    } : undefined
-	                }
-	            });
-	        }
-	        this.animationState.forwards = !this.animationState.forwards;
-	    },
+	    // Your performAnimation however, definitely should
 	    performAnimation:function() {
+	        // get a reference to the DOM
 	        var node = this.refs.ball.getDOMNode();
+	        // and modify it accordingly
 	        node.style.left = (this.animationState.x*70 + 15)+"%";
+	    },
+	    // Start the animation
+	    animateBall:function() {
+	        var end = this.animationState.forwards ? 1 : 0;
+	        this.simulateToHalt({
+	            x: {
+	                endValue: end,
+	                modelFn: Model.controlled.underDamped,
+	            }
+	        });
+	        this.animationState.forwards = !this.animationState.forwards;
 	    }
 	});
 

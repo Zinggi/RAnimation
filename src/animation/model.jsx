@@ -2,7 +2,7 @@
 
 var Model = {};
 
-var eps = 0.01;
+var eps = 0.0001;
 
 Model.helpers = {
     /*
@@ -37,18 +37,13 @@ Model.helpers = {
     	if (cond) {
     		// Make sure the end value is exactly endValue
     		o.value = o.endValue;
-    		console.log("stop controlled");
     	}
     	return cond;
     },
     stopUncontrolled(o) {
-    	var cond = Math.abs(o.velocity) < eps && Math.abs(o.acceleration) < eps;
-    	if(cond) {
-    		console.log("stop uncontrolled");
-    	}
-    	return cond;
+    	return Math.abs(o.velocity) < eps && Math.abs(o.acceleration) < eps;
     },
-    dontStop(o) {
+    dontStop(_) {
     	return false;
     }
 };
@@ -79,25 +74,9 @@ Model.constraints = {
 };
 
 Model.forces = {
-	/* a simple friction force */
-	friction(frictionCoefficient) {
+	gravity(g) {
 		return (o) => {
-			if (o.velocity > eps) {
-				return -frictionCoefficient;
-			} else if (o.velocity < -eps) {
-				return frictionCoefficient;
-			} return 0;
-		};
-	},
-	gravity(g, floor) {
-		return (o) => {
-			if (g > 0 && o.value > floor) {
-				return -g;
-			} else if (g < 0 && o.value < floor) {
-				return -g;
-			} else {
-				return 0;
-			}
+			return -g;
 		};
 	},
 	/* Drag equation with a high Reynolds number */
@@ -153,22 +132,10 @@ Model.controlled.criticallyDamped = Model.controlled.make.criticallyDamped(10);
 // ### Uncontrolled ###
 Model.uncontrolled = {};
 Model.uncontrolled.make = {
-	gravity(g, floor) {
-		var fg = Model.forces.gravity(g, floor);
+	gravity(g) {
+		var fg = Model.forces.gravity(g);
 		return (obj, dt, t) => {
 			return Model.helpers.verletIntegration(obj, fg(obj), dt);
-		};
-	},
-	slide(friction) {
-		var f = Model.forces.friction(friction);
-		return (obj, dt, t) => {
-			return Model.helpers.verletIntegration(obj, f(obj), dt);
-		};
-	},
-	slidePhysical(mass, g, friction) {
-		var f = Model.forces.friction(g*mass*friction);
-		return (obj, dt, t) => {
-			return Model.helpers.verletIntegration(obj, f(obj), dt);
 		};
 	},
 	airDrag(constant) {
@@ -184,9 +151,8 @@ Model.uncontrolled.make = {
 		};
 	}
 };
-Model.uncontrolled.gravity = Model.uncontrolled.make.gravity(10, 0);
-Model.uncontrolled.gravityUpsideDown = Model.uncontrolled.make.gravity(-10, 1);
-Model.uncontrolled.slide = Model.uncontrolled.make.slide(1);
+Model.uncontrolled.gravity = Model.uncontrolled.make.gravity(10);
+Model.uncontrolled.gravityUpsideDown = Model.uncontrolled.make.gravity(-10);
 Model.uncontrolled.airDrag = Model.uncontrolled.make.airDrag(0.5);
 Model.uncontrolled.damper = Model.uncontrolled.make.airDrag(5);
 Model.uncontrolled.fluidDrag = Model.uncontrolled.make.fluidDrag(5);

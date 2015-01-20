@@ -10,17 +10,17 @@ var Demo = React.createClass({
             animationType: "physical",
             duration: 1.5,
             easing: "quadInOut",
-            forwards: true,
             fadeDuration: 0.5,
             fadeEasing: "quadOut",
             useFade: true,
-            frequency: 20,
+            frequency: 10,
             damping: 0.6
         };
     },
     getInitialAnimationState() {
         return {
-            x: 0
+            x: 0,
+            forwards: true
         };
     },
     render() {
@@ -70,7 +70,7 @@ var Demo = React.createClass({
         </div>;
     },
     animateBall() {
-        var end = (this.state.forwards) ? 1 : 0;
+        var end = (this.animationState.forwards) ? 1 : 0;
         var isAtEnd = Math.abs(this.animationState.x - end) === 1;
         var isStatic = this.state.animationType === "static";
         if (!isStatic) {
@@ -93,9 +93,7 @@ var Demo = React.createClass({
                 }
             });
         }
-        this.setState({
-            forwards: !this.state.forwards
-        });
+        this.animationState.forwards = !this.animationState.forwards;
     },
     performAnimation() {
         var node = this.refs.ball.getDOMNode();

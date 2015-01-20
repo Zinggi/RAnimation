@@ -47,106 +47,98 @@
 	"use strict";
 
 	var React = __webpack_require__(2),
-	    $__0=    __webpack_require__(1),animationMixin=$__0.animationMixin,Easing=$__0.Easing,Model=$__0.Model;
+	    $__0=   __webpack_require__(1),animationMixin=$__0.animationMixin,Model=$__0.Model;
+
+	var getTouchPos = function(e)  {
+	    var touch = (e.touches && e.touches[0]) || e;
+	    return {x: touch.clientX, y: touch.clientY};
+	};
 
 	var Demo = React.createClass({displayName: "Demo",
+	    // Make sure the motor is running...
 	    mixins: [animationMixin],
-	    getInitialState:function() {
-	        return {
-	            animationType: "physical",
-	            duration: 1.5,
-	            easing: "quadInOut",
-	            fadeDuration: 0.5,
-	            fadeEasing: "quadOut",
-	            useFade: true,
-	            frequency: 10,
-	            damping: 0.6
-	        };
+	    componentDidMount:function() {
+	        window.addEventListener('resize', this.getFrameSize);
+	        this.getFrameSize();
 	    },
+	    componentWillUnmount:function() {
+	        window.removeEventListener('resize', this.getFrameSize);
+	    },
+	    getFrameSize:function() {
+	        this.animationState.sizeX = this.getDOMNode().clientWidth;
+	        this.animationState.sizeY = this.getDOMNode().clientHeight;
+	    },
+	    // The initial state
 	    getInitialAnimationState:function() {
 	        return {
-	            x: 0,
-	            forwards: true
+	            x: 0.5,
+	            y: 0.5,
+	            mousedown: false,
+	            sizeX: 1280,
+	            sizeY: 720
 	        };
 	    },
+	    down:function(e) {
+	        this.animationState.mousedown = true;
+	        var pos = getTouchPos(e);
+	        this.startIndirectUserInput({
+	            x: {
+	                endValue: pos.x/this.animationState.sizeX,
+	                modelFn: Model.controlled.underDamped
+	            },
+	            y: {
+	                endValue: pos.y/this.animationState.sizeY,
+	                modelFn: Model.controlled.underDamped
+	            }
+	        });
+	    },
+	    up:function(e) {
+	        this.animationState.mousedown = false;
+	        this.simulateBall(0.5, 0.5);
+	    },
+	    // Your render method should NOT depend on animationState!
 	    render:function() {
-	        var options = Object.keys(Easing).filter(function(key)  {return !/make/.test(key);}).map(function(key)  {return React.createElement("option", {key: key}, key);});
-
-	        var config = (this.state.animationType === "static") ?
-	            React.createElement("div", null, 
-	                React.createElement("select", {value: this.state.easing, 
-	                        onChange: function(e)  {this.setState({easing: e.target.value});}.bind(this)}, 
-	                    options
-	                ), 
-	                "duration: ", React.createElement("input", {type: "number", step: "0.1", value: this.state.duration, 
-	                                 onChange: function(e)  {this.setState({duration: parseFloat(e.target.value)});}.bind(this)}), 
-	                React.createElement("br", null), 
-	                "fade? ", React.createElement("input", {type: "checkbox", checked: this.state.useFade, 
-	                             onChange: function(e)  {this.setState({useFade: e.target.checked});}.bind(this)}), 
-	                React.createElement("select", {value: this.state.fadeEasing, 
-	                        onChange: function(e)  {this.setState({fadeEasing: e.target.value});}.bind(this)}, 
-	                    options
-	                ), 
-	                "duration: ", React.createElement("input", {type: "number", step: "0.02", value: this.state.fadeDuration, 
-	                                 onChange: function(e)  {this.setState({fadeDuration: parseFloat(e.target.value)});}.bind(this)})
-	            ) :
-	            React.createElement("div", null, 
-	                "frequency: ", React.createElement("input", {type: "number", step: "0.5", value: this.state.frequency, 
-	                                 onChange: function(e)  {this.setState({frequency: parseFloat(e.target.value)});}.bind(this)}), 
-	                "damping: ", React.createElement("input", {type: "number", step: "0.1", value: this.state.damping, 
-	                                 onChange: function(e)  {this.setState({damping: parseFloat(e.target.value)});}.bind(this)}), 
-	                this.state.damping < 1 ? "under damped" : this.state.damping === 1 ? "critical damped" : "over damped"
-	            );
-
-	        return React.createElement("div", {style: {height:"100%"}}, 
-	            React.createElement("select", {value: this.state.animationType, 
-	                    onChange: function(e)  {this.setState({animationType: e.target.value});}.bind(this)}, 
-	                React.createElement("option", null, "static"), 
-	                React.createElement("option", null, "physical")
-	            ), 
-	            React.createElement("br", null), 
-	            config, 
-	            React.createElement("br", null), 
-	            React.createElement("button", {onClick: this.animateBall}, 
-	                "Animate!"
-	            ), 
-
+	        return React.createElement("div", {onMouseMove: this.animateBall, onTouchMove: this.animateBall, 
+	                    onMouseDown: this.down, onTouchStart: this.down, 
+	                    onMouseUp: this.up, onTouchEnd: this.up, onTouchCancel: this.up, 
+	                    style: {height:"100%"}}, 
 	            React.createElement("div", {ref: "ball", 
-	                 style: {backgroundColor:"red", width: "50px", height: "50px", borderRadius: "10px", position: "absolute"}})
+	                 style: {backgroundColor:"red", width: "50px", height: "50px", borderRadius: "10px",
+	                         position: "absolute", marginLeft: "-25px", marginTop: "-25px"}})
 	        );
 	    },
-	    animateBall:function() {
-	        var end = (this.animationState.forwards) ? 1 : 0;
-	        var isAtEnd = Math.abs(this.animationState.x - end) === 1;
-	        var isStatic = this.state.animationType === "static";
-	        if (!isStatic) {
-	            this.simulateToHalt({
-	                x: {
-	                    endValue: end,
-	                    modelFn: Model.controlled.make.dampedHarmonicOscillator(this.state.frequency, this.state.damping)
-	                }
-	            });
-	        } else {
-	            this.easeTo({
-	                x: {
-	                    endValue: end,
-	                    duration: this.state.duration * Math.abs(this.animationState.x - end),
-	                    easingFn: Easing[this.state.easing],
-	                    fade: (this.state.useFade && !isAtEnd) ? {
-	                        duration: this.state.fadeDuration,
-	                        interpolationFn: Easing[this.state.fadeEasing]
-	                    } : undefined
-	                }
-	            });
-	        }
-	        this.animationState.forwards = !this.animationState.forwards;
-	    },
+	    // Your performAnimation however, definitely should
 	    performAnimation:function() {
 	        var node = this.refs.ball.getDOMNode();
-	        node.style.left = (this.animationState.x*70 + 15)+"%";
+	        node.style.left = (this.animationState.x*100)+"%";
+	        node.style.top = (this.animationState.y*100)+"%";
+	    },
+	    animateBall:function(e) {
+	        if (!this.animationState.mousedown) {
+	            return;
+	        }
+	        var pos = getTouchPos(e);
+	        this.userInput({
+	            x: pos.x/this.animationState.sizeX,
+	            y: pos.y/this.animationState.sizeY
+	        });
+	    },
+	    // Start the animation
+	    simulateBall:function(x, y) {
+	        this.simulateToHalt({
+	            x: {
+	                endValue: x,
+	                modelFn: Model.controlled.underDamped
+	            },
+	            y: {
+	                endValue: y,
+	                modelFn: Model.controlled.underDamped
+	            }
+	        });
 	    }
 	});
 
+	React.initializeTouchEvents(true);
 	React.render(React.createElement(Demo, null), document.querySelector('body'));
 
 /***/ },

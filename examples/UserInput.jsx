@@ -30,23 +30,32 @@ var Demo = React.createClass({
             sizeY: 720
         };
     },
+    getInitialState() {
+        return {
+            useDirect: false,
+            model: "damper"
+        };
+    },
     down(e) {
         this.animationState.mousedown = true;
         var pos = getTouchPos(e);
-        // this.startDirectUserInput({
-        //     x: pos.x/this.animationState.sizeX,
-        //     y: pos.y/this.animationState.sizeY
-        // });
-        this.startIndirectUserInput({
-            x: {
-                endValue: pos.x/this.animationState.sizeX,
-                modelFn: Model.controlled.make.dampedHarmonicOscillator(10, 0.7)
-            },
-            y: {
-                endValue: pos.y/this.animationState.sizeY,
-                modelFn: Model.controlled.make.dampedHarmonicOscillator(10, 0.7)
-            }
-        });
+        if (this.state.useDirect) {
+            this.startDirectUserInput({
+                x: pos.x/this.animationState.sizeX,
+                y: pos.y/this.animationState.sizeY
+            });
+        } else {
+            this.startIndirectUserInput({
+                x: {
+                    endValue: pos.x/this.animationState.sizeX,
+                    modelFn: Model.controlled.make.dampedHarmonicOscillator(10, 0.7)
+                },
+                y: {
+                    endValue: pos.y/this.animationState.sizeY,
+                    modelFn: Model.controlled.make.dampedHarmonicOscillator(10, 0.7)
+                }
+            });
+        }
     },
     up(e) {
         this.animationState.mousedown = false;
@@ -56,10 +65,19 @@ var Demo = React.createClass({
         return <div onMouseMove={this.animateBall} onTouchMove={this.animateBall}
                     onMouseDown={this.down} onTouchStart={this.down}
                     onMouseUp={this.up} onTouchEnd={this.up} onTouchCancel={this.up}
-                    style={{height:"100%"}}>
+                    style={{height:"100%", userSelect: "none", WebkitUserSelect: "none", MozUserSelect: "-moz-none"}}>
+            <select value={this.state.model}
+                    onChange={(e) => {this.setState({model: e.target.value});}}>
+                <option>damper</option>
+                <option>fluidDrag</option>
+                <option>gravity</option>
+                <option>airDrag</option>
+            </select>
+            direct? <input type="checkbox" checked={this.state.useDirect}
+                         onChange={(e) => {this.setState({useDirect: e.target.value});}} />
             <div ref="ball"
                  style={{backgroundColor:"red", width: "50px", height: "50px", borderRadius: "10px",
-                         position: "absolute", marginLeft: "-25px", marginTop: "-25px"}} />
+                         position: "absolute", marginLeft: "-25px", marginTop: "-25px", pointerEvents: "none"}} />
         </div>;
     },
     animateBall(e) {
@@ -67,35 +85,19 @@ var Demo = React.createClass({
             return;
         }
         var pos = getTouchPos(e);
-        // this.directUserInput({
-        //     x: pos.x/this.animationState.sizeX,
-        //     y: pos.y/this.animationState.sizeY
-        // });
-        this.indirectUserInput({
+        this.userInput({
             x: pos.x/this.animationState.sizeX,
             y: pos.y/this.animationState.sizeY
         });
     },
     simulateBall(x, y) {
-        // this.simulateToHalt({
-        //     x: {
-        //         endValue: x,
-        //         modelFn: Model.controlled.underDamped
-        //     },
-        //     y: {
-        //         endValue: y,
-        //         modelFn: Model.controlled.underDamped
-        //     }
-        // });
-        // var slide = Model.helpers.constrain(Model.uncontrolled.slide, [Model.constraints.elasticBoundaries(0, 1)]);
-        var gravity = Model.helpers.constrain(Model.uncontrolled.gravityUpsideDown, [Model.constraints.elasticBoundaries(0, 1, 0.7)]);
-        var airDrag = Model.helpers.constrain(Model.uncontrolled.airDrag, [Model.constraints.elasticBoundaries(0, 1, 0.7)]);
+        var fn = this.fns[this.state.model];
         this.simulateToHalt({
             x: {
-                modelFn: airDrag
+                modelFn: this.state.model === "gravity" ? this.fns.airDrag : fn
             },
             y: {
-                modelFn: gravity
+                modelFn: fn
             }
         });
     },
@@ -103,6 +105,12 @@ var Demo = React.createClass({
         var node = this.refs.ball.getDOMNode();
         node.style.left = (this.animationState.x*100)+"%";
         node.style.top = (this.animationState.y*100)+"%";
+    },
+    fns: {
+        damper: Model.helpers.constrain(Model.uncontrolled.damper, [Model.constraints.elasticBoundaries(0, 1)]),
+        fluidDrag: Model.helpers.constrain(Model.uncontrolled.fluidDrag, [Model.constraints.elasticBoundaries(0, 1)]),
+        gravity: Model.helpers.constrain(Model.uncontrolled.gravityUpsideDown, [Model.constraints.elasticBoundaries(0, 1, 0.7)]),
+        airDrag: Model.helpers.constrain(Model.uncontrolled.airDrag, [Model.constraints.elasticBoundaries(0, 1, 0.7)]),
     }
 });
 

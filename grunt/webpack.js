@@ -5,6 +5,8 @@ module.exports = {
     entry: {
       DemoExample: './examples/DemoExample.jsx',
       UserInput: './examples/UserInput.jsx',
+      SimpleDemo: './examples/SimpleDemo.jsx',
+      SimpleUserInput: './examples/SimpleUserInput.jsx',
     },
     output: {
       path: path.join(__dirname,'../examples'),
