@@ -24,7 +24,7 @@ var Demo = React.createClass({
         };
     },
     render() {
-        var options = Object.keys(Easing).filter(key => !/make/.test(key)).map(key => <option key={key}>{key}</option>);
+        var options = Object.keys(Easing).filter(key => !/(make)|(helpers)/.test(key)).map(key => <option key={key}>{key}</option>);
 
         var config = (this.state.animationType === "static") ?
             <div>

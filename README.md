@@ -50,7 +50,7 @@ For maximum control, but achieved by ignoring the previous velocity,
 	* Configure with [Easing.*](#Easing).
 
 When you want to keep as much control as possible, while maintaining the previous velocity, you need to fade one animation into the other.  
- * Use [easeTo](http://github.com/Zinggi/RAnimation/search?q=easeTo(newState)&type=Code), with a fade object.  
+ * Use [easeTo](http://github.com/Zinggi/RAnimation/search?q=easeTo(newState)&type=Code) with a fade object.  
 	* Configure with [Easing.*](#Easing).
 
 ### Physical animations
@@ -67,6 +67,9 @@ If you don't need to know where the animation ends, e.g. for a scrolling list,
 	* Configure with [Model.uncontrolled.*](#Model).
 
 ### User input
+
+Use [userInput](http://github.com/Zinggi/RAnimation/search?q=userInput(newState)&type=Code) to give the user control over an animation.
+Before you call that, you need to configure how the animation should react on this input with the fallowing functions:  
 
 If you want to give a user direct control over the motion of an object,
  * Use [startDirectUserInput](http://github.com/Zinggi/RAnimation/search?q=startDirectUserInput(startState)&type=Code)

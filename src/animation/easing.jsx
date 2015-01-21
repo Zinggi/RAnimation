@@ -101,7 +101,7 @@ var Easing = {
 
     /* A comic style function, going back first */
     backIn(t) {
-        return Easing.makeBackIn(1.70158)(t);
+        return Easing.make.backIn(1.70158)(t);
     },
     backOut(t) { return helpers.toEaseOut(Easing.backIn)(t); },
     backInOut(t) { return helpers.toEaseInOut(Easing.backIn)(t); },

@@ -20,7 +20,7 @@ var isVisible = (function(){
     };
 })();
 
-
+// http://www.paulirish.com/2011/requestanimationframe-for-smart-animating/
 window.requestAnimationFrame = (function(){
   return  window.requestAnimationFrame       ||
       window.webkitRequestAnimationFrame ||
@@ -30,7 +30,7 @@ window.requestAnimationFrame = (function(){
       };
 })();
 
-
+// https://gist.github.com/paulirish/5438650
 (function(){
 	// prepare base perf object
 	if (typeof window.performance === 'undefined') {

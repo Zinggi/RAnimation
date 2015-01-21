@@ -74,10 +74,10 @@ var Demo = React.createClass({
                 <option>airDrag</option>
             </select>
             direct? <input type="checkbox" checked={this.state.useDirect}
-                         onChange={(e) => {this.setState({useDirect: e.target.value});}} />
+                         onChange={(e) => {this.setState({useDirect: e.target.checked});}} />
             <div ref="ball"
                  style={{backgroundColor:"red", width: "50px", height: "50px", borderRadius: "10px",
-                         position: "absolute", marginLeft: "-25px", marginTop: "-25px", pointerEvents: "none"}} />
+                         position: "absolute", marginLeft: "-25px", marginTop: "-25px", pointerEvents: "none", zIndex: -1}} />
         </div>;
     },
     animateBall(e) {
