@@ -4,8 +4,8 @@ An animation library for React.
 
 ## Demo
 
-[Demo Animations](http://zinggi.github.io/RAnimation/DemoExample.html) / [Src](examples/DemoExample.jsx)  
-[Demo UserInput](http://zinggi.github.io/RAnimation/UserInput.html) / [Src](examples/UserInput.jsx)  
+[Demo Animations](https://rawgit.com/Zinggi/RAnimation/master/DemoExample.html) / [Src](examples/DemoExample.jsx)  
+[Demo UserInput](https://rawgit.com/Zinggi/RAnimation/master/UserInput.html) / [Src](examples/UserInput.jsx)  
 
 Check out all the [examples](examples)!
 
@@ -46,12 +46,12 @@ These can be useful when you need exact control over an animation, e.g. you want
 [Robert Penner's Easing Functions](http://www.robertpenner.com/easing/) have almost become standard for these kind of animations, so a slightly modified version of them is included in this library.  
 
 For maximum control, but achieved by ignoring the previous velocity,  
- * Use [easeTo](http://github.com/Zinggi/RAnimation/search?q=easeTo(newState)&type=Code),  
-	* Configure with [Easing.*](#Easing).
+ * Use [easeTo](src/animation/animationMixin.jsx#L379-L428),  
+	* Configure with [Easing.*](src/animation/easing.jsx#L62).
 
 When you want to keep as much control as possible, while maintaining the previous velocity, you need to fade one animation into the other.  
- * Use [easeTo](http://github.com/Zinggi/RAnimation/search?q=easeTo(newState)&type=Code), with a fade object.  
-	* Configure with [Easing.*](#Easing).
+ * Use [easeTo](src/animation/animationMixin.jsx#L379-L428), with a fade object.  
+	* Configure with [Easing.*](src/animation/easing.jsx#L62).
 
 ### Physical animations
 
@@ -59,21 +59,21 @@ If you want physically accurate animations, you will have to give up a little bi
 This means you don't know anymore how long an animation will take, but as a plus, the animation will be way more realistic.  
 
 If you want an animation from point a to b, given some physical model describing the motion,  
- * Use [simulateToHalt](http://github.com/Zinggi/RAnimation/search?q=simulateToHalt(newState, dontStop)&type=Code),  
-    * Configure with [Model.controlled.*](#Model).
+ * Use [simulateToHalt](src/animation/animationMixin.jsx#L226-L278),  
+    * Configure with [Model.controlled.*](src/animation/model.jsx#L107).
 
 If you don't need to know where the animation ends, e.g. for a scrolling list,  
- * Use [simulateToHalt](http://github.com/Zinggi/RAnimation/search?q=simulateToHalt(newState, dontStop)&type=Code),  
-	* Configure with [Model.uncontrolled.*](#Model).
+ * Use [simulateToHalt](src/animation/animationMixin.jsx#L226-L278),  
+	* Configure with [Model.uncontrolled.*](src/animation/model.jsx#L132).
 
 ### User input
 
 If you want to give a user direct control over the motion of an object,
- * Use [startDirectUserInput](http://github.com/Zinggi/RAnimation/search?q=startDirectUserInput(startState)&type=Code)
+ * Use [startDirectUserInput](src/animation/animationMixin.jsx#L339-L354)
 
 If you want to respect physical properties of an object the user is controlling, e.g. something that should feel heavy,  
- * Use [startIndirectUserInput](http://github.com/Zinggi/RAnimation/search?q=startIndirectUserInput(newState)&type=Code)
- 	* Configure with [Model.controlled.*](#Model).
+ * Use [startIndirectUserInput](src/animation/animationMixin.jsx#L361-L375)
+ 	* Configure with [Model.controlled.*](src/animation/model.jsx#L107).
 
 ### Decoration / Additive animation
 **This is currently in progress and not implemented yet!**  
@@ -100,8 +100,8 @@ var {animationMixin, Easing, Model} = require('r-animation');
 
 ### Simple examples
 Check out:  
-[simple animation](http://zinggi.github.io/RAnimation/SimpleDemo.html) / [src](examples/SimpleDemo.jsx)  
-[simple user input](http://zinggi.github.io/RAnimation/SimpleUserInput.html) / [src](examples/SimpleUserInput.jsx)
+[simple animation](https://rawgit.com/Zinggi/RAnimation/master/SimpleDemo.html) / [src](examples/SimpleDemo.jsx)  
+[simple user input](https://rawgit.com/Zinggi/RAnimation/master/SimpleUserInput.html) / [src](examples/SimpleUserInput.jsx)
 
 #### animationMixin
 This mixin powers the whole animation system.  
