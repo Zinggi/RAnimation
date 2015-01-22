@@ -3,6 +3,14 @@
 var React = require('react/addons'),
     {animationMixin, Easing, Model} = require('../src/index.jsx');
 
+var parseFloatDefault = (string, def) => {
+    var x = parseFloat(string);
+    if (isNaN(x)) {
+        return def;
+    }
+    return x;
+};
+
 var Demo = React.createClass({
     mixins: [animationMixin],
     getInitialState() {
@@ -32,8 +40,9 @@ var Demo = React.createClass({
                         onChange={(e) => {this.setState({easing: e.target.value});}}>
                     {options}
                 </select>
-                duration: <input type="number" step="0.1" value={this.state.duration}
-                                 onChange={(e) => {this.setState({duration: parseFloat(e.target.value)});}} />
+                {/* I woulds have loved to use type="number", but some android browsers then fail to input decimal numbers. */}
+                duration: <input type="text" defaultValue={this.state.duration}
+                                 onChange={(e) => {this.setState({duration: parseFloatDefault(e.target.value, 1)});}} />
                 <br />
                 fade? <input type="checkbox" checked={this.state.useFade}
                              onChange={(e) => {this.setState({useFade: e.target.checked});}} />
@@ -41,14 +50,14 @@ var Demo = React.createClass({
                         onChange={(e) => {this.setState({fadeEasing: e.target.value});}}>
                     {options}
                 </select>
-                duration: <input type="number" step="0.02" value={this.state.fadeDuration}
-                                 onChange={(e) => {this.setState({fadeDuration: parseFloat(e.target.value)});}} />
+                duration: <input type="text" defaultValue={this.state.fadeDuration}
+                                 onChange={(e) => {this.setState({fadeDuration: parseFloatDefault(e.target.value, 0.5)});}} />
             </div> :
             <div>
-                frequency: <input type="number" step="0.5" value={this.state.frequency}
-                                 onChange={(e) => {this.setState({frequency: parseFloat(e.target.value)});}} />
-                damping: <input type="number" step="0.1" value={this.state.damping}
-                                 onChange={(e) => {this.setState({damping: parseFloat(e.target.value)});}} />
+                frequency: <input type="text" defaultValue={this.state.frequency}
+                                 onChange={(e) => {this.setState({frequency: parseFloatDefault(e.target.value, 10)});}} />
+                damping: <input type="text" defaultValue={this.state.damping}
+                                 onChange={(e) => {this.setState({damping: parseFloatDefault(e.target.value, 0.7)});}} />
                 {this.state.damping < 1 ? "under damped" : this.state.damping === 1 ? "critical damped" : "over damped"}
             </div>;
 
