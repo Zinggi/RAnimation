@@ -27,6 +27,7 @@ isVisible(() => {
     }
 });
 
+var uniqueIDCounter = 0;
 
 // the animation loop
 var doAnimations = () => {
@@ -57,8 +58,9 @@ var doAnimations = () => {
 
 var startAnimation = (anim, prop, ref) => {
     numAnimations++;
-    var rootID = ref._rootNodeID;
-    var animCont = ongoingAnimations[rootID] = ongoingAnimations[rootID] || {
+    // var rootID = ref._rootNodeID;
+    var UID = ref._UID_animation;
+    var animCont = ongoingAnimations[UID] = ongoingAnimations[UID] || {
         ref: ref,
         anims: {},
     };
@@ -71,8 +73,9 @@ var startAnimation = (anim, prop, ref) => {
 };
 
 var getAnimation = (ref, prop) => {
-    var rootID = ref._rootNodeID;
-    var animCont = ongoingAnimations[rootID];
+    // var rootID = ref._rootNodeID;
+    var UID = ref._UID_animation;
+    var animCont = ongoingAnimations[UID];
     if (animCont) {
         return animCont.anims[prop];
     }
@@ -141,17 +144,24 @@ var cancelAnimation = (prop, rootID, couldFinish, dontFireOnEnd) => {
 
 // Cancel all animations for the given ref.
 var cancelAnimations = (ref, dontFireOnEnd) => {
-    var rootNode = ref._rootNodeID;
-    var animCont = ongoingAnimations[rootNode];
+    // var rootNode = ref._rootNodeID;
+    var UID = ref._UID_animation;
+    var animCont = ongoingAnimations[UID];
     if (animCont) {
         for (var prop in animCont.anims) {
-            cancelAnimation(prop, rootNode, false, dontFireOnEnd);
+            cancelAnimation(prop, UID, false, dontFireOnEnd);
         }
     }
 };
 
 
 var animationMixin = {
+    componentWillMount() {
+        // Make sure to give each component a unique ID
+        this._UID_animation = uniqueIDCounter;
+        uniqueIDCounter++;
+        debugger;
+    },
     componentDidMount() {
         // set the initial state
         this.animationState = this.getInitialAnimationState();
@@ -206,7 +216,7 @@ var animationMixin = {
      */
     cancelAnimation(p, couldFinish) {
         couldFinish = !!couldFinish;
-        return cancelAnimation(p, this._rootNodeID, couldFinish);
+        return cancelAnimation(p, this._UID_animation, couldFinish);
     },
 
     /*
@@ -250,7 +260,6 @@ var animationMixin = {
      *             //   where o : { value: Num, velocity: Num, acceleration: Num, (Optional)endValue: Num }
      *             //     NOTE: f can modify obj in place and then return the modified version!
      *             // DEFAULT: Model.controlled.criticallyDamped, if endValue specified
-     *                         TODO: test
      *             //          Model.uncontrolled.damper, else
      *         endValue: 42,
      *             // If you use a function from Model.controlled.* specify the end value here,

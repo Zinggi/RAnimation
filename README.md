@@ -83,16 +83,22 @@ If you want to respect physical properties of an object the user is controlling,
 **This is currently in progress and not implemented yet!**  
 Adding an animation on top of another could be useful, as described [here](http://ronnqvi.st/multiple-animations/).
 Given that this library already does smooth interruptions of ongoing animation, the only use of this would be to add some complexity to animations, as in the heart example of the linked article.
+However, this can be achieved differently. The heart animation has a one degree of freedom, therefore it's enough to animate a single value. This value then has to be mapped to the desired path.
 
 ### Animation state
 The state of your animation doesn't describe you application state, therefore it will not be stored inside your state object.
 Instead you can access it anytime with `this.animationState`.  
 You can manipulate it with the above functions.
-The initial animation state needs to be specified inside you `getInitialAnimationState` function!
+The initial animation state needs to be specified inside your `getInitialAnimationState` function!
 
 ### Perform animation
 Since we are avoiding Reacts diffing algorithm for performance reasons, we sadly can't completely describe our UI in our render method.  
-Instead, `performAnimation` will be called anytime a new frame is rendered, so that you can then imperatively modify the DOM to display your current `animationState`. This is not ideal, I would prefer a declarative way like the render method, but it seems to be necessary for good performance.
+Instead, `performAnimation` will be called every time a new frame is rendered, so that you can then imperatively modify the DOM to display your current `animationState`. This is not ideal, I would prefer a declarative way like the render method, but it seems to be necessary for good performance.
+
+### Performance tips
+Avoid the diffing algorithm while performing an animation at all cost!   
+It leads to unacceptable stutter on mobile devices.
+A technique to avoid the algorithm is to avoid calling `setState` during an ongoing animation. If you still want to maintain some state information, a very controversial but efficient way to do this is by directly modifying `this.state`. Yes, crazy, I know!
 
 
 ## API
@@ -142,6 +148,10 @@ First time, run:
 `npm install`  
 After that, Just run:  
 `grunt dev`
+
+---
+## Also try this
+[r-layout](https://github.com/Zinggi/RLayout) - Layout made simple. Screw CSS!
 
 ---
 ## License
