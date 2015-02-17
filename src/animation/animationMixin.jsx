@@ -58,7 +58,6 @@ var doAnimations = () => {
 
 var startAnimation = (anim, prop, ref) => {
     numAnimations++;
-    // var rootID = ref._rootNodeID;
     var UID = ref._UID_animation;
     var animCont = ongoingAnimations[UID] = ongoingAnimations[UID] || {
         ref: ref,
@@ -73,7 +72,6 @@ var startAnimation = (anim, prop, ref) => {
 };
 
 var getAnimation = (ref, prop) => {
-    // var rootID = ref._rootNodeID;
     var UID = ref._UID_animation;
     var animCont = ongoingAnimations[UID];
     if (animCont) {
@@ -123,8 +121,8 @@ var modifyAnimationEndValue = (ref, prop, newValue) => {
 };
 
 // Cancels an animation, calls onEnd and returns the canceled animation.
-var cancelAnimation = (prop, rootID, couldFinish, dontFireOnEnd) => {
-    var animCont = ongoingAnimations[rootID];
+var cancelAnimation = (prop, UID, couldFinish, dontFireOnEnd) => {
+    var animCont = ongoingAnimations[UID];
     if (animCont) {
         var anim = animCont.anims[prop];
         if (anim) {
@@ -134,7 +132,7 @@ var cancelAnimation = (prop, rootID, couldFinish, dontFireOnEnd) => {
             numAnimations--;
             delete animCont.anims[prop];
             if (Object.keys(animCont.anims).length === 0) {
-                delete ongoingAnimations[rootID];
+                delete ongoingAnimations[UID];
             }
             return anim;
         }
@@ -144,7 +142,6 @@ var cancelAnimation = (prop, rootID, couldFinish, dontFireOnEnd) => {
 
 // Cancel all animations for the given ref.
 var cancelAnimations = (ref, dontFireOnEnd) => {
-    // var rootNode = ref._rootNodeID;
     var UID = ref._UID_animation;
     var animCont = ongoingAnimations[UID];
     if (animCont) {
@@ -160,7 +157,6 @@ var animationMixin = {
         // Make sure to give each component a unique ID
         this._UID_animation = uniqueIDCounter;
         uniqueIDCounter++;
-        debugger;
     },
     componentDidMount() {
         // set the initial state
