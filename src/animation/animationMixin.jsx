@@ -157,10 +157,11 @@ var animationMixin = {
         // Make sure to give each component a unique ID
         this._UID_animation = uniqueIDCounter;
         uniqueIDCounter++;
-    },
-    componentDidMount() {
+
         // set the initial state
         this.animationState = this.getInitialAnimationState();
+    },
+    componentDidMount() {
         // perform first animation
         this.performAnimation();
     },
