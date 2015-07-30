@@ -19,7 +19,7 @@
     "url": "https://github.com/Zinggi/RAnimation"
   },
   "peerDependencies": {
-    "react": "0.12.x"
+    "react": "0.13.x"
   },
   "devDependencies": {
     "react": "^0.12.1",
