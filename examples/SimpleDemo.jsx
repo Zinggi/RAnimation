@@ -1,7 +1,7 @@
 "use strict";
 
 var React = require('react/addons'),
-    {animationMixin, Model} = require('../src/index.jsx');
+    {animationMixin, Model} = require('../src/index.js');
 
 var Demo = React.createClass({
     // Make sure the motor is running...

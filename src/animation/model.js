@@ -8,7 +8,7 @@ Model.helpers = {
     /*
      * Used internally for animating
      */
-    verletIntegration(obj, newA, dt) {
+    verletIntegration: function(obj, newA, dt) {
     	var x = obj.value;
     	var v = obj.velocity;
     	var a = obj.acceleration;
@@ -21,8 +21,8 @@ Model.helpers = {
     	}
     	return obj;
     },
-    constrain(simulation, constraints) {
-    	return (obj, dt, t) => {
+    constrain: function(simulation, constraints) {
+    	return function(obj, dt, t) {
     		// Integrate first, then check if the constraint is
     		// fulfilled, if not, run the constraint to fix the problem
     		var o = simulation(obj, dt, t);
@@ -32,7 +32,7 @@ Model.helpers = {
     		return o;
     	};
     },
-    stopControlled(o) {
+    stopControlled: function(o) {
     	var cond = Math.abs(o.endValue-o.value) < eps && Math.abs(o.velocity) < eps;
     	if (cond) {
     		// Make sure the end value is exactly endValue
@@ -40,10 +40,10 @@ Model.helpers = {
     	}
     	return cond;
     },
-    stopUncontrolled(o) {
+    stopUncontrolled: function(o) {
     	return Math.abs(o.velocity) < eps && Math.abs(o.acceleration) < eps;
     },
-    dontStop(_) {
+    dontStop: function(_) {
     	return false;
     }
 };
@@ -51,11 +51,11 @@ Model.constraints = {
 	// TODO: still buggy!
 	// I think I'm doing this wrong, especially the check to see if velocity is big enough
 	// seems wrong. However, it seems to work ok...
-	elasticBoundaries(lower, upper, bounceConstant) {
+	elasticBoundaries: function(lower, upper, bounceConstant) {
 		var l = typeof lower !== 'undefined' ? lower : -Infinity;
 		var u = typeof upper !== 'undefined' ? upper : Infinity;
 		var e = typeof bounceConstant !== 'undefined' ? bounceConstant : 0.8;
-		return (o, dt) => {
+		return function(o, dt) {
 			var b = (o.value < l) ? l : ((o.value > u) ? u : undefined);
 			if (typeof b !== "undefined") {
 				o.value = b;
@@ -74,14 +74,14 @@ Model.constraints = {
 };
 
 Model.forces = {
-	gravity(g) {
-		return (o) => {
+	gravity: function(g) {
+		return function(o) {
 			return -g;
 		};
 	},
 	/* Drag equation with a high Reynolds number */
-	fluidDrag(dragConstant) {
-		return (o) => {
+	fluidDrag: function(dragConstant) {
+		return function(o) {
 			var v = o.velocity;
 			if (v > 0) {
 				return -dragConstant*v*v;
@@ -91,37 +91,37 @@ Model.forces = {
 		};
 	},
 	/* Drag equation with a low Reynolds number */
-	airDrag(dragConstant) {
-		return (o) => -dragConstant*o.velocity;
+	airDrag: function(dragConstant) {
+		return function(o) { return -dragConstant*o.velocity; };
 	},
-	spring(springConstant) {
-		return (o) => {
+	spring: function(springConstant) {
+		return function(o) {
 			return (o.endValue - o.value) * springConstant;
 		};
 	},
-	damper(damperConstant) {
-		return (o) => -damperConstant*o.velocity;
+	damper: function(damperConstant) {
+		return function(o) { return -damperConstant*o.velocity; };
 	}
 };
 
 // ### Controlled ###
 Model.controlled = {};
 Model.controlled.make = {
-	massSpringDamper(mass, springConstant, damperConstant) {
+	massSpringDamper: function(mass, springConstant, damperConstant) {
 		var fd = Model.forces.damper(damperConstant);
 		var fs = Model.forces.spring(springConstant);
-		return (obj, dt, t) => {
+		return function(obj, dt, t) {
 			return Model.helpers.verletIntegration(obj, (fs(obj)+fd(obj))/mass, dt);
 		};
     }
 };
-Model.controlled.make.dampedHarmonicOscillator = (frequency, damping) => {
+Model.controlled.make.dampedHarmonicOscillator = function(frequency, damping) {
 	return Model.controlled.make.massSpringDamper(1, frequency*frequency, 2*frequency*damping);
 };
-Model.controlled.make.criticallyDamped = (frequency) => {
+Model.controlled.make.criticallyDamped = function(frequency) {
 	return Model.controlled.make.dampedHarmonicOscillator(1, frequency);
 };
-Model.controlled.make.damper = (mass, damping) => {
+Model.controlled.make.damper = function(mass, damping) {
 	return Model.controlled.make.massSpringDamper(mass, 0, damping);
 };
 Model.controlled.underDamped = Model.controlled.make.dampedHarmonicOscillator(10, 0.5);
@@ -132,21 +132,21 @@ Model.controlled.criticallyDamped = Model.controlled.make.criticallyDamped(10);
 // ### Uncontrolled ###
 Model.uncontrolled = {};
 Model.uncontrolled.make = {
-	gravity(g) {
+	gravity: function(g) {
 		var fg = Model.forces.gravity(g);
-		return (obj, dt, t) => {
+		return function(obj, dt, t) {
 			return Model.helpers.verletIntegration(obj, fg(obj), dt);
 		};
 	},
-	airDrag(constant) {
+	airDrag: function(constant) {
 		var f = Model.forces.airDrag(constant);
-		return (obj, dt, t) => {
+		return function(obj, dt, t) {
 			return Model.helpers.verletIntegration(obj, f(obj), dt);
 		};
 	},
-	fluidDrag(constant) {
+	fluidDrag: function(constant) {
 		var f = Model.forces.fluidDrag(constant);
-		return (obj, dt, t) => {
+		return function(obj, dt, t) {
 			return Model.helpers.verletIntegration(obj, f(obj), dt);
 		};
 	}
@@ -156,6 +156,8 @@ Model.uncontrolled.gravityUpsideDown = Model.uncontrolled.make.gravity(-10);
 Model.uncontrolled.airDrag = Model.uncontrolled.make.airDrag(0.5);
 Model.uncontrolled.damper = Model.uncontrolled.make.airDrag(5);
 Model.uncontrolled.fluidDrag = Model.uncontrolled.make.fluidDrag(5);
-Model.uncontrolled.nothing = (obj, dt, t) => Model.helpers.verletIntegration(obj, 0, dt);
+Model.uncontrolled.nothing = function(obj, dt, t) {
+    Model.helpers.verletIntegration(obj, 0, dt);
+};
 
 module.exports = Model;

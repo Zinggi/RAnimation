@@ -1,6 +1,6 @@
 # RAnimation
 
-An animation library for React.
+An animation library made for React.
 
 ## Demo
 
@@ -57,7 +57,7 @@ When you want to keep as much control as possible, while maintaining the previou
 ### Physical animations
 
 If you want physically accurate animations, you will have to give up a little bit of control over the animation.  
-This means you don't know anymore how long an animation will take, but as a plus, the animation will be way more realistic.  
+This means you don't know any more how long an animation will take, but as a plus, the animation will be way more realistic.  
 
 If you want an animation from point a to b, given some physical model describing the motion,  
  * Use [simulateToHalt](src/animation/animationMixin.jsx#L226-L278),  
@@ -87,7 +87,7 @@ However, this can be achieved differently. The heart animation has a one degree 
 
 ### Animation state
 The state of your animation doesn't describe you application state, therefore it will not be stored inside your state object.
-Instead you can access it anytime with `this.animationState`.  
+Instead you can access it any time with `this.animationState`.  
 You can manipulate it with the above functions.
 The initial animation state needs to be specified inside your `getInitialAnimationState` function!
 

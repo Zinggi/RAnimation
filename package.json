@@ -19,10 +19,9 @@
     "url": "https://github.com/Zinggi/RAnimation"
   },
   "peerDependencies": {
-    "react": "0.12.x"
   },
   "devDependencies": {
-    "react": "^0.12.1",
+    "react": "^0.13.3",
     "grunt": "^0.4.5",
     "grunt-cli": "^0.1.13",
     "grunt-contrib-watch": "^0.6.1",

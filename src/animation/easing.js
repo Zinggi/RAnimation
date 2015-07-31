@@ -9,16 +9,16 @@ var helpers = {
      * @start: the start value
      * @end: the end value
      */
-    ease(f, start, end) {
-        return t => start + f(t) * (end - start);   
+    ease: function(f, start, end) {
+        return function(t) { return start + f(t) * (end - start); };
     },
     /* Takes an easing function and reverses it, effectively creating an ease-out animation */
-    toEaseOut(f) {
-      return t => 1 - f(1 - t);
+    toEaseOut: function(f) {
+      return function(t) { return 1 - f(1 - t); };
     },
     /* Takes an easing function and transforms it, creating an ease-in-out animation */
-    toEaseInOut(f) {
-      return t => 0.5 * (t < 0.5 ? f(2 * t) : (2 - f(2 - 2 * t)));
+    toEaseInOut: function(f) {
+      return function(t) { return 0.5 * (t < 0.5 ? f(2 * t) : (2 - f(2 - 2 * t))); };
     },
     /*
      * Squeezes a function f to a new function f' that satisfies the easing function properties.
@@ -28,15 +28,15 @@ var helpers = {
      * @x2: the right x coordinate that should become the new (1, 1), e.g. (x2, f(x2)) -> (1, 1)
      * @return: a function f' that satisfies f'(0) = 0 and f'(1) = 1
      */
-    squeeze(f, x1, x2) {
+    squeeze: function(f, x1, x2) {
         var y1 = f(x1);
-        return t => (f(x1 + t*(x2-x1)) - y1) / (f(x2) - y1);
+        return function(t) { return (f(x1 + t*(x2-x1)) - y1) / (f(x2) - y1); };
     },
     /*
      * Used for implementing easing animations
      */
-    advance(startTime, animDuration, easing) {
-        return (oldAnim, dt, now) => {
+    advance: function(startTime, animDuration, easing) {
+        return function(oldAnim, dt, now) {
             var percentage = (now - startTime) / animDuration;
             if (percentage >= 1) {
                 percentage = 1;
@@ -61,83 +61,83 @@ var helpers = {
  */
 var Easing = {
     /* Linear interpolation. Mostly ugly. */
-    linear(t) {
+    linear: function(t) {
         return t;
     },
     /* t^2 */
-    quadIn(t) {
+    quadIn: function(t) {
         return t * t;
     },
-    quadOut(t) { return helpers.toEaseOut(Easing.quadIn)(t); },
-    quadInOut(t) { return helpers.toEaseInOut(Easing.quadIn)(t); },
+    quadOut: function(t) { return helpers.toEaseOut(Easing.quadIn)(t); },
+    quadInOut: function(t) { return helpers.toEaseInOut(Easing.quadIn)(t); },
 
     /* t^3 */
-    cubicIn(t) {
+    cubicIn: function(t) {
         return Math.pow(t, 3);
     },
-    cubicOut(t) { return helpers.toEaseOut(Easing.cubicIn)(t); },
-    cubicInOut(t) { return helpers.toEaseInOut(Easing.cubicIn)(t); },
+    cubicOut: function(t) { return helpers.toEaseOut(Easing.cubicIn)(t); },
+    cubicInOut: function(t) { return helpers.toEaseInOut(Easing.cubicIn)(t); },
 
     /* 1 - cos(t * Pi/2) */
-    sinIn(t) {
+    sinIn: function(t) {
         return 1 - Math.cos(t * Math.PI/2);
     },
-    sinOut(t) { return helpers.toEaseOut(Easing.sinIn)(t); },
-    sinInOut(t) { return helpers.toEaseInOut(Easing.sinIn)(t); },
+    sinOut: function(t) { return helpers.toEaseOut(Easing.sinIn)(t); },
+    sinInOut: function(t) { return helpers.toEaseInOut(Easing.sinIn)(t); },
 
     /* 2^(10(t-1)). Note that expIn(0)!=0, but it's close enough */
-    expIn(t) {
+    expIn: function(t) {
         return Math.pow(2, 10 * (t - 1));
     },
-    expOut(t) { return helpers.toEaseOut(Easing.expIn)(t); },
-    expInOut(t) { return helpers.toEaseInOut(Easing.expIn)(t); },
+    expOut: function(t) { return helpers.toEaseOut(Easing.expIn)(t); },
+    expInOut: function(t) { return helpers.toEaseInOut(Easing.expIn)(t); },
 
     /* 1 - sqrt(1-t^2) */
-    circleIn(t) {
+    circleIn: function(t) {
         return 1 - Math.sqrt(1 - t * t);
     },
-    circleOut(t) { return helpers.toEaseOut(Easing.circleIn)(t); },
-    circleInOut(t) { return helpers.toEaseInOut(Easing.circleIn)(t); },
+    circleOut: function(t) { return helpers.toEaseOut(Easing.circleIn)(t); },
+    circleInOut: function(t) { return helpers.toEaseInOut(Easing.circleIn)(t); },
 
     /* A comic style function, going back first */
-    backIn(t) {
+    backIn: function(t) {
         return Easing.make.backIn(1.70158)(t);
     },
-    backOut(t) { return helpers.toEaseOut(Easing.backIn)(t); },
-    backInOut(t) { return helpers.toEaseInOut(Easing.backIn)(t); },
+    backOut: function(t) { return helpers.toEaseOut(Easing.backIn)(t); },
+    backInOut: function(t) { return helpers.toEaseInOut(Easing.backIn)(t); },
 
 
     /* A spring like function */
-    elasticIn(t) {
+    elasticIn: function(t) {
         // return Easing.makeElasticIn(7, 3)(t);
         return Math.sin(13.0 * t * Math.PI/2) * Math.pow(2.0, 10.0 * (t - 1.0));
     },
-    elasticOut(t) { return helpers.toEaseOut(Easing.elasticIn)(t); },
-    elasticInOut(t) { return helpers.toEaseInOut(Easing.elasticIn)(t); },
+    elasticOut: function(t) { return helpers.toEaseOut(Easing.elasticIn)(t); },
+    elasticInOut: function(t) { return helpers.toEaseInOut(Easing.elasticIn)(t); },
 
 
     /* a bouncy function */
-    bounceIn(t) {
+    bounceIn: function(t) {
         // return Easing.makeBounceIn(2, 3)(t);
         return helpers.toEaseOut(Easing.bounceOut)(t);
     },
-    bounceOut(t) { 
+    bounceOut: function(t) { 
         return t < 1 / 2.75 ? 7.5625 * t * t
             : t < 2 / 2.75 ? 7.5625 * (t -= 1.5 / 2.75) * t + 0.75
             : t < 2.5 / 2.75 ? 7.5625 * (t -= 2.25 / 2.75) * t + 0.9375
             : 7.5625 * (t -= 2.625 / 2.75) * t + 0.984375;
     },
-    bounceInOut(t) { return helpers.toEaseInOut(Easing.bounceIn)(t); },
+    bounceInOut: function(t) { return helpers.toEaseInOut(Easing.bounceIn)(t); },
 };
 
 var make = {
     /* returns f(t) = t^e */
-    polyIn(exponent) {
-        return t => Math.pow(t, exponent);
+    polyIn: function(exponent) {
+        return function(t) { return Math.pow(t, exponent); };
     },
     /* a comic style function, going backwards first */
-    backIn(amplitude) {
-        return x => x*x*((1+amplitude)*x-amplitude);
+    backIn: function(amplitude) {
+        return function(x) { return x*x*((1+amplitude)*x-amplitude); };
     },
     /* 
      * returns a spring like function
@@ -145,10 +145,12 @@ var make = {
      * @springiness: how much it swings, 7 seems to be a nice value.
      * @numberOfSwings: how many swings, Integer.
      */
-    elasticIn(springiness, numberOfSwings) {
+    elasticIn: function(springiness, numberOfSwings) {
         var s = springiness;
         var n = Math.round(numberOfSwings);
-        return x => (Math.exp(s*x)-1.0)/(Math.exp(s)-1.0)*(Math.sin((Math.PI * 2.0 * n + Math.PI * 0.5) * x));
+        return function(x) {
+            return (Math.exp(s*x)-1.0)/(Math.exp(s)-1.0)*(Math.sin((Math.PI * 2.0 * n + Math.PI * 0.5) * x));
+        };
     }
 };
 

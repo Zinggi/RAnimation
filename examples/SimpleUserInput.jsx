@@ -1,7 +1,7 @@
 "use strict";
 
 var React = require('react/addons'),
-    {animationMixin, Model} = require('../src/index.jsx');
+    {animationMixin, Model} = require('../src/index.js');
 
 var getTouchPos = (e) => {
     var touch = (e.touches && e.touches[0]) || e;
