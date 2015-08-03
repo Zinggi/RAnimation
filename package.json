@@ -3,7 +3,7 @@
   "version": "0.5.0",
   "author": "Florian Zinggeler",
   "description": "Animations for your react components!",
-  "main": "./src/index.jsx",
+  "main": "./src/index.js",
   "keywords": [
     "react",
     "react-component",
