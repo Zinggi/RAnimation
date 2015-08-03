@@ -1,7 +1,7 @@
 "use strict";
 
 var React = require('react/addons'),
-    {animationMixin, Easing, Model} = require('../src/index.jsx');
+    {animationMixin, Easing, Model} = require('../src/index.js');
 
 var parseFloatDefault = (string, def) => {
     var x = parseFloat(string);

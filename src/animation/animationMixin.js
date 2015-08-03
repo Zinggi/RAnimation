@@ -8,7 +8,7 @@ var Model = require("./model");
 var ModelHelpers = Model.helpers;
 
 // A little helper function, as we do all calculations in seconds
-var nowInSeconds = () => window.performance.now() / 1000;
+var nowInSeconds = function() { return window.performance.now() / 1000; }
 
 // Here we keep track of all ongoing animations
 var ongoingAnimations = {};
@@ -19,7 +19,7 @@ var numAnimations = 0;
 // The last time we rendered a frame
 var lastFrame = nowInSeconds();
 
-isVisible(() => {
+isVisible(function() {
     if (isVisible()) {
         // we reset this, as a lot of time passed since being hidden,
         // so dt would be ridiculously high!
@@ -30,7 +30,7 @@ isVisible(() => {
 var uniqueIDCounter = 0;
 
 // the animation loop
-var doAnimations = () => {
+var doAnimations = function() {
     var now = nowInSeconds();
     var dt = now - lastFrame;
     for (var p in ongoingAnimations) {
@@ -56,7 +56,7 @@ var doAnimations = () => {
     lastFrame = now;
 };
 
-var startAnimation = (anim, prop, ref) => {
+var startAnimation = function(anim, prop, ref) {
     numAnimations++;
     var UID = ref._UID_animation;
     var animCont = ongoingAnimations[UID] = ongoingAnimations[UID] || {
@@ -71,7 +71,7 @@ var startAnimation = (anim, prop, ref) => {
     }
 };
 
-var getAnimation = (ref, prop) => {
+var getAnimation = function(ref, prop) {
     var UID = ref._UID_animation;
     var animCont = ongoingAnimations[UID];
     if (animCont) {
@@ -82,9 +82,9 @@ var getAnimation = (ref, prop) => {
 
 // This is used for direct user input.
 // A dummy animation makes sure to track the current velocity
-var startDirectInputAnimation = (ref, prop, startValue) => {
+var startDirectInputAnimation = function(ref, prop, startValue) {
     startAnimation({
-        advance(oldAnim, dt, now) {
+        advance: function(oldAnim, dt, now) {
             var v = (oldAnim.endValue - oldAnim.value) / dt;
             // Smooth the velocity, to get rid of too crazy movements...
             oldAnim.velocity = 0.8 * v + 0.2 * oldAnim.velocity;
@@ -99,7 +99,7 @@ var startDirectInputAnimation = (ref, prop, startValue) => {
 };
 
 // This is used to start a simulation based on a model.
-var startModelSimulation = (ref, prop, startValue, endValue, velocity, acceleration, modelFn, endCondition, onEnd) => {
+var startModelSimulation = function(ref, prop, startValue, endValue, velocity, acceleration, modelFn, endCondition, onEnd) {
     startAnimation({
         advance: modelFn,
         endValue: endValue,
@@ -113,7 +113,7 @@ var startModelSimulation = (ref, prop, startValue, endValue, velocity, accelerat
 };
 
 // For user input, we need to be able to modify an ongoing animations endValue.
-var modifyAnimationEndValue = (ref, prop, newValue) => {
+var modifyAnimationEndValue = function(ref, prop, newValue) {
     var anim = getAnimation(ref, prop);
     if (anim) {
         anim.endValue = newValue;
@@ -121,7 +121,7 @@ var modifyAnimationEndValue = (ref, prop, newValue) => {
 };
 
 // Cancels an animation, calls onEnd and returns the canceled animation.
-var cancelAnimation = (prop, UID, couldFinish, dontFireOnEnd) => {
+var cancelAnimation = function(prop, UID, couldFinish, dontFireOnEnd) {
     var animCont = ongoingAnimations[UID];
     if (animCont) {
         var anim = animCont.anims[prop];
@@ -141,7 +141,7 @@ var cancelAnimation = (prop, UID, couldFinish, dontFireOnEnd) => {
 };
 
 // Cancel all animations for the given ref.
-var cancelAnimations = (ref, dontFireOnEnd) => {
+var cancelAnimations = function(ref, dontFireOnEnd) {
     var UID = ref._UID_animation;
     var animCont = ongoingAnimations[UID];
     if (animCont) {
@@ -153,7 +153,7 @@ var cancelAnimations = (ref, dontFireOnEnd) => {
 
 
 var animationMixin = {
-    componentWillMount() {
+    componentWillMount: function() {
         // Make sure to give each component a unique ID
         this._UID_animation = uniqueIDCounter;
         uniqueIDCounter++;
@@ -161,7 +161,7 @@ var animationMixin = {
         // set the initial state
         this.animationState = this.getInitialAnimationState();
     },
-    componentDidMount() {
+    componentDidMount: function() {
         // perform first animation
         this.performAnimation();
     },
@@ -201,7 +201,7 @@ var animationMixin = {
      *     ...
      * }
      */
-    startAnimation(anim, p) {
+    startAnimation: function(anim, p) {
         startAnimation(anim, p, this);
     },
 
@@ -211,7 +211,7 @@ var animationMixin = {
      * 
      * This contains a velocity property, among some other implementation details
      */
-    cancelAnimation(p, couldFinish) {
+    cancelAnimation: function(p, couldFinish) {
         couldFinish = !!couldFinish;
         return cancelAnimation(p, this._UID_animation, couldFinish);
     },
@@ -226,7 +226,7 @@ var animationMixin = {
      * Note that you could modify the ongoing animation here,
      * but that should never be necessary.
      */
-    getAnimation(prop) {
+    getAnimation: function(prop) {
         return getAnimation(this, prop);
     },
 
@@ -281,7 +281,7 @@ var animationMixin = {
      *     }
      * }
      */
-    simulateToHalt(newState, dontStop) {
+    simulateToHalt: function(newState, dontStop) {
         for (var p in newState) {
             var config = newState[p];
             var anim = this.cancelAnimation(p);
@@ -336,7 +336,7 @@ var animationMixin = {
      * }
      * 
      */
-    userInput(newState) {
+    userInput: function(newState) {
         for (var p in newState) {
             modifyAnimationEndValue(this, p, newState[p]);
         }
@@ -357,7 +357,7 @@ var animationMixin = {
      *     x: 42
      * }
      */
-    startDirectUserInput(startState) {
+    startDirectUserInput: function(startState) {
         for (var p in startState) {
             this.cancelAnimation(p);
             startDirectInputAnimation(this, p, startState[p]); 
@@ -378,7 +378,7 @@ var animationMixin = {
      * 
      * @newState: refer to a controlled simulateToHalt(...) animation.
      */
-    startIndirectUserInput(newState) {
+    startIndirectUserInput: function(newState) {
         this.simulateToHalt(newState, true);
     },
 
@@ -431,7 +431,7 @@ var animationMixin = {
      *      }, ...
      *  }
      */
-    easeTo(newState) {
+    easeTo: function(newState) {
         var startTime = nowInSeconds();
 
         for (var p in newState) {
@@ -459,7 +459,7 @@ var animationMixin = {
             if (fade) {
                 var fadeDuration = fade.duration || 0.5;
                 var easing = fade.interpolationFn || Easing.quadOut;
-                newEasingFn = (t) => {
+                newEasingFn = function(t) {
                     if (t < fadeDuration) {
                         var eased = easing(t/fadeDuration);
                         return (1 - eased) * (velocity * t * newAnimDuration + startValue) + eased * tempEasing(t);
@@ -479,7 +479,7 @@ var animationMixin = {
             startAnimation(anim, p, this);
         }
     },
-    componentWillUnmount() {
+    componentWillUnmount: function() {
         cancelAnimations(this, true);
     }
 };

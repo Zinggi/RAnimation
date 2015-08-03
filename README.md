@@ -1,6 +1,6 @@
 # RAnimation
 
-An animation library for React.
+An animation library made for React.
 
 ## Demo
 
@@ -46,38 +46,38 @@ These can be useful when you need exact control over an animation, e.g. you want
 [Robert Penner's Easing Functions](http://www.robertpenner.com/easing/) have almost become standard for these kind of animations, so a slightly modified version of them is included in this library.  
 
 For maximum control, but achieved by ignoring the previous velocity,  
- * Use [easeTo](src/animation/animationMixin.jsx#L379-L428),  
-	* Configure with [Easing.*](src/animation/easing.jsx#L62).
+ * Use [easeTo](src/animation/animationMixin.js#L385-L434),  
+	* Configure with [Easing.*](src/animation/easing.js#L62).
 
 When you want to keep as much control as possible, while maintaining the previous velocity, you need to fade one animation into the other.  
 
- * Use [easeTo](src/animation/animationMixin.jsx#L379-L428) with a fade object.  
-	* Configure with [Easing.*](src/animation/easing.jsx#L62).
+ * Use [easeTo](src/animation/animationMixin.js#L385-L434) with a fade object.  
+	* Configure with [Easing.*](src/animation/easing.js#L62).
 
 ### Physical animations
 
 If you want physically accurate animations, you will have to give up a little bit of control over the animation.  
-This means you don't know anymore how long an animation will take, but as a plus, the animation will be way more realistic.  
+This means you don't know any more how long an animation will take, but as a plus, the animation will be way more realistic.  
 
 If you want an animation from point a to b, given some physical model describing the motion,  
- * Use [simulateToHalt](src/animation/animationMixin.jsx#L226-L278),  
-    * Configure with [Model.controlled.*](src/animation/model.jsx#L107).
+ * Use [simulateToHalt](src/animation/animationMixin.js#L233-L284),  
+    * Configure with [Model.controlled.*](src/animation/model.js#L107).
 
 If you don't need to know where the animation ends, e.g. for a scrolling list,  
- * Use [simulateToHalt](src/animation/animationMixin.jsx#L226-L278),  
-	* Configure with [Model.uncontrolled.*](src/animation/model.jsx#L132).
+ * Use [simulateToHalt](src/animation/animationMixin.js#L233-L284),  
+	* Configure with [Model.uncontrolled.*](src/animation/model.js#L132).
 
 ### User input
 
-Use [userInput](src/animation/animationMixin.jsx#L314-L333) to give the user control over an animation.
+Use [userInput](src/animation/animationMixin.js#L320-L339) to give the user control over an animation.
 Before you call that, you need to configure how the animation should react on this input with the fallowing functions:  
 
 If you want to give a user direct control over the motion of an object,
- * Use [startDirectUserInput](src/animation/animationMixin.jsx#L339-L354)
+ * Use [startDirectUserInput](src/animation/animationMixin.js#L345-L360)
 
 If you want to respect physical properties of an object the user is controlling, e.g. something that should feel heavy,  
- * Use [startIndirectUserInput](src/animation/animationMixin.jsx#L361-L375)
- 	* Configure with [Model.controlled.*](src/animation/model.jsx#L107).
+ * Use [startIndirectUserInput](src/animation/animationMixin.js#L367-L381)
+ 	* Configure with [Model.controlled.*](src/animation/model.js#L107).
 
 ### Decoration / Additive animation
 **This is currently in progress and not implemented yet!**  
@@ -87,7 +87,7 @@ However, this can be achieved differently. The heart animation has a one degree 
 
 ### Animation state
 The state of your animation doesn't describe you application state, therefore it will not be stored inside your state object.
-Instead you can access it anytime with `this.animationState`.  
+Instead you can access it any time with `this.animationState`.  
 You can manipulate it with the above functions.
 The initial animation state needs to be specified inside your `getInitialAnimationState` function!
 
@@ -129,17 +129,17 @@ It provides:
  * getAnimation
  * startAnimation
 
-[doc](src/animation/animationMixin.jsx)
+[doc](src/animation/animationMixin.js)
 
 #### Easing
 A collection of easing functions.
 
-[doc](src/animation/easing.jsx)
+[doc](src/animation/easing.js)
 
 #### Model
 A collection of physical models.
 
-[doc](src/animation/model.jsx)
+[doc](src/animation/model.js)
 
 ---
 ## Develop
