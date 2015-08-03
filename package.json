@@ -1,6 +1,6 @@
 {
   "name": "r-animation",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "author": "Florian Zinggeler",
   "description": "Animations for your react components!",
   "main": "./src/index.js",
