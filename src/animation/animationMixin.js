@@ -405,7 +405,7 @@ var animationMixin = {
      *          duration: 1.5,
      *              // The duration of the animation in seconds.
      *              // DEFAULT: 1
-     *          easingFn(t) { return Math.pow(t, 3); },
+     *          easingFn: fn(t) { return Math.pow(t, 3); },
      *              // An easing function f with type: f(t: Num [0-1]) -> Num
      *              //      where f(0) = 0 and f(1) = 1. f(0 < t < 1) is allowed to be out of the [0-1] range!
      *              // There are many useful functions available in Easing.* to pick from.
